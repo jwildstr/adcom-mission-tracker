@@ -159,7 +159,7 @@ app.post('/api/import', async (req, res) => {
       }
 
       // After localStorage is repopulated, go to home page
-      window.location.href = '/';
+      window.location.href = '/adcom-mission-tracker/';
     })();
   </script>
 </body>
