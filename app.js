@@ -9,7 +9,10 @@ import { promisify } from 'node:util';
 const gunzip = promisify(zlib.gunzip);
 const app = express();
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({
+  extended: false,
+  limit: '5mb'
+}));
 app.use(express.json());
 app.use(
   express.static('public', {

@@ -62,8 +62,9 @@ function determineActiveTitle() {
     let href = e.src;
     href = href.replace('img/', `img/${ACTIVE_TITLE}/`);
     e.src = href;
-
   });
+
+  document.querySelector('link[rel="shortcut icon"]').href = document.querySelector('link[rel="shortcut icon"]').href.replace('img/', `img/${ACTIVE_TITLE}/`);
 
   window.localStorage.setItem('activeTitle', ACTIVE_TITLE);
 

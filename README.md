@@ -14,6 +14,8 @@ The website is mainly a static page built upon a single monolith JS file (`missi
 ## Build Instructions
 Te website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server. Several directories and files which are not present by default are required. Please contact the developer if you are unsure what should go in here.
 
+Assets/images are not provided in the repository as these are copyrighted material.
+
 ### .env File
 The `.env` file should be structured as follows:
 

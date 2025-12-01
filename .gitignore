@@ -1,6 +1,7 @@
 # Config
 .env
 data/
+public/img/
 
 # Module
 node_modules/
