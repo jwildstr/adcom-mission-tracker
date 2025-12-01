@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>AdVenture Communist Mission Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link id="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet"
+    crossorigin="anonymous">
+  <link href="missions_base.css" rel="stylesheet">
+  <link href="missions_img.css" rel="stylesheet">
+  <link rel="shortcut icon" type="image/png" href="img/adcom/shared/gacha/stone.png">
+  <script src="admin.js" defer></script>
+</head>
+
+<body>
+  <nav class="navbar navbar-dark bg-dark sticky-top">
+    <div class="container-fluid">
+      <div id="sideMenuBtn" class="navbar-brand open-btn">
+        <img src="img/adcom/shared/gacha/stone.png" width="30" height="20" class="d-inline-block align-self-center"
+          alt="AdCom icon">
+        Admin Frontend
+      </div>
+    </div>
+  </nav>
+  <div class="container pt-2">
+    <h2>Admin Frontend</h2>
+    <div class="mb-3">
+      <form onsubmit="return false">
+        <div class="mb-3">
+          <label for="adminControlPass">Password</label>
+          <input id="adminControlPass" class="form-control" type="password" aria-describedby="adminControlData"
+            maxlength="1024">
+          <div id="adminControlData" class="form-text">This page is not intended to be accessed by the public</div>
+        </div>
+        <button id="formSubmitAdmin" type="submit" class="btn btn-primary">Log In</button>
+        <span id="adminLoginStatus" class="d-none p-2 text-danger"></span>
+      </form>
+    </div>
+  </div>
+  <div id="mainContent" class="d-none">
+    <hr>
+    <div class="container pt-2">
+      <h3>Update Data Files</h3>
+      <form onsubmit="return false">
+        <div>
+          <div>
+            <input type="radio" id="title_ADCOM" name="title" value="6bf5" checked />
+            <label for="title_ADCOM">AdVenture Communist (current version: <span
+                id="existingVersion_ADCOM"></span>)</label>
+          </div>
+          <div>
+            <input type="radio" id="title_AGES" name="title" value="dc4bb" />
+            <label for="title_AGES">AdVenture Ages (current version: <span id="existingVersion_AGES"></span>)</label>
+          </div>
+          <label for="dataVersion" class="form-label">Version to Update To</label>
+          <input class="form-control" type="text" id="dataVersion" name="version" required>
+          <br>
+          <input id="secondaryAdminAuthentication" class="form-control d-none" type="password" name="password"
+            maxlength="1024">
+          <button id="formSubmitUpdateDataFile" type="submit" class="btn btn-primary">Update</button>
+          <span id="updateDataFileStatus" class="d-none p-2 text-danger"></span>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+
+</html>

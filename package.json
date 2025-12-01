@@ -1,0 +1,25 @@
+{
+  "name": "adcom-mission-tracker",
+  "version": "1.0.0",
+  "description": "AdVenture Communist Mission Tracker",
+  "homepage": "https://github.com/darrenrs/adcom-mission-tracker#readme",
+  "bugs": {
+    "url": "https://github.com/darrenrs/adcom-mission-tracker/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/darrenrs/adcom-mission-tracker.git"
+  },
+  "license": "MIT",
+  "author": "zephyron1237, Enigma",
+  "type": "module",
+  "main": "config.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  }
+}

@@ -1,1 +1,10 @@
+# Config
+.env
+data/
+
+# Module
+node_modules/
+
+# Extra
 .DS_Store
+Thumbs.db
