@@ -12,25 +12,66 @@ Switch between Motherland (main) and Event as well as between AdVenture Communis
 The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). Let's just say I am interested in refactoring it! The server is a simple Node.js/Express instance running on a Docker container. Game data files are stored server-side and can be updated by server administrators.
 
 ## Build Instructions
-Te website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server. Several directories and files which are not present by default are required. Please contact the developer if you are unsure what should go in here.
 
-Assets/images are not provided in the repository as these are copyrighted material.
+You'll need a few things set up first, so you can create the environment file.
+
+### PlayFab ID
+
+If you don't have any idea what a PlayFab ID is, you'll want to follow these instructions. If you already know, you can bypass this and do it in a "proper" way.
+
+In order to do anything, you'll need a playfab ID. This is a 16-digit hex string (0-9 and A-F). You can find yours in the settings menu of the game, although it didn't work for me. You can create the necessary account for both games as follows (replace DEVID with your PlayFab ID, and this assumes you're setting it up for iOS):
+
+```
+curl -H "Content-Type: application/json" -d '{"DeviceId": "DEVID", "CreateAccount":true, "TitleId": "dc4bb"}' https://dc4bb.playfabapi.com/Client/LoginWithIOSDeviceID
+curl -H "Content-Type: application/json" -d '{"DeviceId": "DEVID", "CreateAccount":true, "TitleId": "6bf5"}' https://6bf5.playfabapi.com/Client/LoginWithIOSDeviceID
+```
+
+This ID should be in the .env file under `PLAYFAB_DEVICE_ID`. If you follow these instructions, `PLAYFAB_DEVICE_ID_TYPE` will need to be IOS.
+
+### The password
+
+The password is stored encrypted in the .env file. To encrypt your password, use sha256sum as follows (This is for a password of `password`)
+
+```
+echo -n password | sha256sum
+```
+
+This will give an output of
+```
+5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8  -
+```
+
+The first long string there is your encrypted password. This is used below, but replace with your own.
 
 ### .env File
-The `.env` file should be structured as follows:
+The `.env` file should be structured as follows (again, replace DEVID with your PlayFab ID). If you don't specify a port, it defaults to 3000:
 
 ```
 # App settings
 PORT=
-ADMIN_PASSWORD=
+ADMIN_PASSWORD=5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
 
 # PlayFab settings
-PLAYFAB_TITLE_ID_ADCOM=
-PLAYFAB_TITLE_ID_AGES=
-PLAYFAB_DEVICE_ID=
-PLAYFAB_DEVICE_ID_TYPE=
+PLAYFAB_TITLE_ID_ADCOM=dc4bb
+PLAYFAB_TITLE_ID_AGES=6bf5
+PLAYFAB_DEVICE_ID=DEVID
+PLAYFAB_DEVICE_ID_TYPE=IOS
 ```
 The Git Commit ID is passed in by the build script and exposed as an environment variable by Docker itself.
+
+### Building and launching
+
+The website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server. Several directories and files which are not present by default are required. Please contact the developer if you are unsure what should go in here.
+
+Assets/images are not provided in the repository as these are copyrighted material.
+
+Once the website is launched, you can browse to it at http://localhost:3000. To fetch the current data, you'll want to run the following (the versions are the latest as of April 18, 2026, but will likely need updating:
+```
+# AdCom data
+curl -H "Content-Type: application/json" -d '{"title":"6bf5", "version":"6.54", "password":"password"}' http://localhost:8080/api/admin/data-file
+# AdAges data
+curl -H "Content-Type: application/json" -d '{"title":"dc4bb", "version":"1.34", "password":"password"}' http://localhost:8080/api/admin/data-file
+```
 
 ## Contributors
 The primary maintainer of this website is Enigma since 2022 with Catster providing additional support. Zephyron is the original creator of the Mission/Capsule Tracker and FAQ documents.
