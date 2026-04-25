@@ -581,6 +581,8 @@ function getSoonestEventInfos(minEventCount = 10, maxEventCount = 20, now = Date
   // The current algorithm is: Search events where EndTime > Now and find the ones with the minimum EndTime.
   // Use a priority queue to keep track of the "maxEventCount" soonest events
   let soonestEvents = new PriorityQueue(maxEventCount, value => value.EndTimeMillis);
+  // Get the most recent concluded event no matter what, as a failsafe
+  let mostRecentEvent = new PriorityQueue(1, value => value.EndTimeMillis);
   
   // oneOffHours is a Set of each hour (as millis from Epoch) contained in all one-offs.
   // This is used when going through cycles to quickly determine if a one-off interrupts
@@ -588,7 +590,7 @@ function getSoonestEventInfos(minEventCount = 10, maxEventCount = 20, now = Date
   
   // Iterate through all the one-offs first before doing the cycles
   for (let oneOffEvent of SCHEDULE_CYCLES.LteOneOff) {
-    updateSoonestOneOff(oneOffEvent, now, soonestEvents, oneOffHours);
+    updateSoonestOneOff(oneOffEvent, now, soonestEvents, mostRecentEvent, oneOffHours);
   }
 
   // Before iterating through the cycles, limit them to ones that aren't over.
@@ -603,7 +605,7 @@ function getSoonestEventInfos(minEventCount = 10, maxEventCount = 20, now = Date
   // We add each to the start to reverse.
   let results = [];
   while (soonestEvents.size() > 0) {
-    results.unshift(soonestEvents.pop());
+    results.unshift(soonestEvent.pop());
   }
   
 
@@ -619,12 +621,18 @@ function getSoonestEventInfos(minEventCount = 10, maxEventCount = 20, now = Date
       lastNewIndex = resultIndex;
     }
   }
-  
-  let resultsToKeep = Math.max(minEventCount, parseInt(lastNewIndex) + 1);
-  return results.slice(0, resultsToKeep);
+
+  if (results.length > 0) {
+    let resultsToKeep = Math.max(minEventCount, parseInt(lastNewIndex) + 1);
+    return results.slice(0, resultsToKeep);
+  }
+  else {
+    // Failsafe, return the most recent event
+    return [mostRecentEvent.pop()];
+  }
 }
 
-function updateSoonestOneOff(oneOffEvent, now, soonestEvents, oneOffHours) {
+function updateSoonestOneOff(oneOffEvent, now, soonestEvents, mostRecentEvent, oneOffHours) {
   let startTimeMillis = getScheduleTimeMillis(oneOffEvent.StartTime);
   let endTimeMillis = getScheduleTimeMillis(oneOffEvent.EndTime);
   oneOffHours.add(endTimeMillis);
@@ -636,12 +644,25 @@ function updateSoonestOneOff(oneOffEvent, now, soonestEvents, oneOffHours) {
          oneOffHours.add(fakeEndTime.getTime());
   }
   
+  // Non-legacy one-off's don't currently have a unique identifier, so let's use the endTime's timestamp.
+  let lteId = oneOffEvent.LegacyLteId || endTimeMillis;
+
   if (now < endTimeMillis) {
     // This event is correctly in the future!
-    // Non-legacy one-off's don't currently have a unique identifier, so let's use the endTime's timestamp.
-    let lteId = oneOffEvent.LegacyLteId || endTimeMillis;
     
     soonestEvents.push({
+      LteId: lteId,
+      BalanceId: oneOffEvent.BalanceId,
+      ThemeId: oneOffEvent.ThemeId,
+      StartTimeMillis: startTimeMillis,
+      EndTimeMillis: endTimeMillis,
+      Rewards: getMilestoneRewardsById(oneOffEvent.RewardId),
+      LeaderboardId: oneOffEvent.LteShortLeaderboardId,
+      GlobalLeaderboardId: oneOffEvent.LeaderboardId
+    });
+  } else {
+    // In the past, but might be more recent than the best guess
+    mostRecentEvent.push({
       LteId: lteId,
       BalanceId: oneOffEvent.BalanceId,
       ThemeId: oneOffEvent.ThemeId,
