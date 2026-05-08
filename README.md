@@ -9,10 +9,10 @@ Each mission has a button of its reward capsule next to it.  Clicking this bring
 Switch between Motherland (main) and Event as well as between AdVenture Communist and AdVenture Ages by clicking on the title's dropdown. Other tools can be accessed by clicking around other icons in the top right.
 
 ## Technical Background
-The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). Let's just say I am interested in refactoring it! The server is a simple Node.js/Express instance running on a Docker container. Game data files are stored server-side and can be updated by server administrators.
+The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). Let's just say I am interested in refactoring it! The server is a simple Node.js/Express instance running on a Docker container. Game data and most game images are served by a dedicated asset server and referenced by title ID.
 
 ## Build Instructions
-Te website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server. Several directories and files which are not present by default are required. Please contact the developer if you are unsure what should go in here.
+The website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server.
 
 Assets/images are not provided in the repository as these are copyrighted material.
 
@@ -22,14 +22,16 @@ The `.env` file should be structured as follows:
 ```
 # App settings
 PORT=
-ADMIN_PASSWORD=
+ASSET_SERVER=
+ASSET_PUBLIC_BASE=
 
-# PlayFab settings
+# Title IDs
 PLAYFAB_TITLE_ID_ADCOM=
 PLAYFAB_TITLE_ID_AGES=
-PLAYFAB_DEVICE_ID=
-PLAYFAB_DEVICE_ID_TYPE=
 ```
+`ASSET_SERVER` is used by backend proxy routes (`/api/data/:title`, `/api/admin/data-file`).
+`ASSET_PUBLIC_BASE` is used by the browser to resolve image assets (for example: `http://localhost:3002/assets/6bf5` in dev or `https://idlegametools.com/adcom-assets/assets/6bf5` in prod).
+
 The Git Commit ID is passed in by the build script and exposed as an environment variable by Docker itself.
 
 ## Contributors
@@ -58,7 +60,7 @@ I welcome any feedback, bug reports, or pull requests.
 If you have any questions, comments, or suggestions, please visit the #engineering channel in the [unofficial AdCom Discord](https://discord.gg/VPa4WTM). We are always happy to help.
 
 ## License
-All files in this repository with the exception of those in `/public/img`, `/docs/icon.png`, and game data files downloaded into `/data` may be modified or redistributed with credit given to the current owner (Enigma) or original owner (Zephyron), given that it ascribes to the Hyper Hippo Fan Content Policy and all legal stipulations.
+All files in this repository may be modified or redistributed with credit given to the current owner (Enigma) or original owner (Zephyron), given that it ascribes to the Hyper Hippo Fan Content Policy and all legal stipulations.
 
 This material is not official and is not endorsed by Hyper Hippo. For more information, see Hyper Hippo’s Fan Content Policy: (https://hyperhippo.com/fan-content-policy/)
 

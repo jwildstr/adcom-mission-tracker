@@ -5,14 +5,89 @@
   <title>AdVenture Communist Mission Tracker</title>
   <link id="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet"
     crossorigin="anonymous">
+  <script>
+    (function() {
+      try {
+        var initialStyle = localStorage.getItem('StyleConfig') || 'light';
+        if (initialStyle === 'dark') {
+          var sheet = document.getElementById('stylesheet');
+          if (sheet) {
+            sheet.href = 'https://stackpath.bootstrapcdn.com/bootswatch/4.3.1/cyborg/bootstrap.min.css';
+          }
+          document.documentElement.classList.add('preload-dark');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  </script>
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link href="missions_base.css" rel="stylesheet">
-  <link rel="shortcut icon" type="image/png" href="img/shared/gacha/stone.png">
+  <link rel="shortcut icon" type="image/png" href="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">
+  <style>
+    html.preload-dark,
+    html.preload-dark body {
+      background-color: #060606;
+      color: #f8f9fa;
+    }
+
+    #missions {
+      min-height: 220px;
+      position: relative;
+    }
+
+    #missionsLoader {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+
+    #missionsLoader.show {
+      display: flex;
+    }
+
+    .scheduleIconSvg {
+      width: 1.15rem;
+      height: 1.15rem;
+      margin-right: 0.35rem;
+      vertical-align: text-bottom;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    :root {
+      --ab-switch-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2.5' y='4.5' width='19' height='15' rx='2.8' fill='%23212c3a'/%3E%3Cpath d='M12 5.5v13' stroke='%2394a3b8' stroke-width='1.4'/%3E%3Cpath d='M6.2 12h3.6M9.2 9.6 11.6 12l-2.4 2.4' stroke='%23f59e0b' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M17.8 12h-3.6M14.8 9.6 12.4 12l2.4 2.4' stroke='%2334d399' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
+
+    .altMissionButton {
+      background-image: var(--ab-switch-icon) !important;
+    }
+  </style>
 </head>
 
 <body id="body">
+  <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" focusable="false">
+    <symbol id="icon-calendar" viewBox="0 0 24 24">
+      <rect x="3.5" y="4.5" width="17" height="16" rx="2.5"></rect>
+      <path d="M7.5 3.5v3M16.5 3.5v3M3.5 9h17"></path>
+      <path d="M8 12.5h.01M12 12.5h.01M16 12.5h.01M8 16h.01M12 16h.01M16 16h.01"></path>
+    </symbol>
+    <symbol id="icon-balances" viewBox="0 0 24 24">
+      <rect x="3.5" y="4.5" width="17" height="16" rx="2.5"></rect>
+      <circle cx="7.8" cy="9.5" r="0.55"></circle>
+      <circle cx="7.8" cy="12.5" r="0.55"></circle>
+      <circle cx="7.8" cy="15.5" r="0.55"></circle>
+      <path d="M10.2 9.5h7M10.2 12.5h7M10.2 15.5h7"></path>
+    </symbol>
+  </svg>
   <nav class="navbar navbar-expand navbar-dark bg-dark">
     <div class="dropdown">
       <button id="mode-select-title" class="nav-btn dropdown-toggle show" type="button" data-toggle="dropdown"
@@ -25,31 +100,31 @@
 
       <ul class="dropdown-menu" aria-labelledby="settingsDropdownMenuLink">
         <a href="?mode=main" class="dropdown-item" id="mode-select-main" title="Switch to Motherland">
-          <img class="scheduleIcon" src="img/shared/themeicons/main.png">
+          <img class="scheduleIcon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="shared/themeicons/main.png">
           Motherland
         </a>
         <a href="?mode=event" class="dropdown-item" id="mode-select-event" title="Switch to Current Event">
-          <img class="scheduleIcon" src="img/shared/themeicons/space.png">
+          <img class="scheduleIcon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">
           Event
         </a>
         <div class="dropdown-divider"></div>
         <a href="#" class="dropdown-item" id="mode-select-schedule" data-toggle="modal" data-target="#schedulePopup"
           title="View Schedule">
-          <img class="scheduleIcon" src="img/shared/calendar.png">
+          <svg class="scheduleIcon scheduleIconSvg" aria-hidden="true"><use href="#icon-calendar"></use></svg>
           Schedule
         </a>
         <a href="#" class="dropdown-item" id="mode-select-eventbal" data-toggle="modal" data-target="#eventBalancePopup"
           title="View All Events">
-          <img class="scheduleIcon" src="img/shared/calendar.png">
+          <svg class="scheduleIcon scheduleIconSvg" aria-hidden="true"><use href="#icon-balances"></use></svg>
           All Events
         </a>
         <div class="dropdown-divider"></div>
         <a href="https://idlegametools.com/adcom-leaderboard/" class="dropdown-item" title="Leaderboard Tracker">
-          <img class="scheduleIcon" src="img/shared/leaderboard-segment.png">
+          <img class="scheduleIcon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="shared/leaderboard-segment.png">
           Leaderboard
         </a>
         <a href="https://stiwen87.github.io/" class="dropdown-item" title="Offline Calculator">
-          <img class="scheduleIcon" src="img/shared/speed.png">
+          <img class="scheduleIcon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="shared/speed.png">
           Offline Calculator
         </a>
       </ul>
@@ -59,25 +134,25 @@
       <li class="nav-item">
         <button type="button" id="viewBalanceInfoButton" class="nav-btn nav-icon-btn" data-toggle="modal"
           data-target="#balanceInfoPopup" data-tab="balance-info-tab" title="View Balance Info">
-          <img src="img/shared/themeicons/main.png">
+          <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="shared/themeicons/main.png">
         </button>
       </li>
       <li class="nav-item">
         <button type="button" id="viewAllGeneratorsButton" class="nav-btn nav-icon-btn" data-toggle="modal"
           data-target="#allInfoPopup" data-tab="all-generators-tab" title="View Generators">
-          <img src="img/main/potato.png">
+          <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="main/potato.png">
         </button>
       </li>
       <li class="nav-item">
         <button type="button" class="nav-btn nav-icon-btn" data-toggle="modal" data-target="#allInfoPopup"
           data-tab="all-researchers-tab" title="View Researchers">
-          <img src="img/shared/card.png">
+          <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="shared/card.png">
         </button>
       </li>
       <li class="nav-item">
         <button type="button" class="nav-btn nav-icon-btn" data-toggle="modal" data-target="#allInfoPopup"
           data-tab="all-trades-tab" title="View Trades">
-          <img src="img/shared/comrades_per_second.png">
+          <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="shared/comrades_per_second.png">
         </button>
       </li>
       <li class="nav-item dropdown">
@@ -104,7 +179,7 @@
           <button class="dropdown-item" data-toggle="modal" data-target="#scriptedGachaTablePopup">Scripted
             Capsules</button>
           <button class="dropdown-item" data-toggle="modal" data-target="#capsuleTablePopup">Capsules by Rank</button>
-          <button class="dropdown-item" data-toggle="modal" data-target="#avatarTablePopup">Avatar Unlocks</button>
+          <button class="dropdown-item" id="avatarUnlocksMenuItem" data-toggle="modal" data-target="#avatarTablePopup">Avatar Unlocks</button>
           <div class="dropdown-divider"></div>
           <h6 class="dropdown-header text-center">Help</h6>
           <button class="dropdown-item" data-toggle="modal" data-target="#helpPopup">General Help</button>
@@ -398,21 +473,23 @@
       <span aria-hidden="true">&times;</span>
     </button>
   </div>
-  <div id="missions"></div>
+  <div id="missions">
+    <div id="missionsLoader" class="show">
+      <div class="spinner-border text-secondary" role="status" aria-label="Loading"></div>
+    </div>
+  </div>
 
   <footer class="ml-2">
     <table class="small text-muted">
       <tr>
-        <td class="px-2"><img class="scheduleIcon imgStaticUrl" src="img/adcom/shared/themeicons/main.png" title="AdVenture Communist">
+        <td class="px-2"><img class="scheduleIcon imgStaticUrl" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="adcom/shared/themeicons/main.png" title="AdVenture Communist">
         </td>
         <td class="px-2"><a href='https://docs.google.com/document/d/1lCa0GNHjXOSpeCgMtqESU7i1UA8LUmObh1s0EfuUPHU/'>Game Guide/FAQ</a></td>
-        <td class="px-2"><a href='https://darrenrs.github.io/adcom-capsule-tracker/'>Capsules</a></td>
       </tr>
       <tr>
-        <td class="px-2"><img class="scheduleIcon imgStaticUrl" src="img/ages/shared/themeicons/main.png" title="AdVenture Ages">
+        <td class="px-2"><img class="scheduleIcon imgStaticUrl" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==" data-legacy-src="ages/shared/themeicons/main.png" title="AdVenture Ages">
         </td>
         <td class="px-2"><a href='https://docs.google.com/document/d/1ioNAqUrwWRGMuPFyctSU7dP5lT-H0h4iBtoigi7fgwg/'>Game Guide/FAQ</a></td>
-        <td class="px-2"><a href='https://darrenrs.github.io/adcom-capsule-tracker/ages'>Capsules</a></td>
       </tr>
     </table>
     <small class="text-muted ml-2">
@@ -435,6 +512,7 @@
     integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
     crossorigin="anonymous"></script>
 
+  <script src="js/runtime-config.js"></script>
   <script src="mission-tracker.js"></script>
 </body>
 

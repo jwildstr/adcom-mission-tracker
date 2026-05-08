@@ -4,10 +4,10 @@ services:
       context: .
       args:
         COMMIT_HASH: ${COMMIT_HASH}  # Passing COMMIT_HASH as an argument
-    volumes:
-      - ./data:/usr/src/app/data  # Dynamic files
     ports:
       - "127.0.0.1:${PORT}:${PORT}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     restart: unless-stopped

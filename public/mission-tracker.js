@@ -9,27 +9,496 @@ let ENGLISH_MAP = {}; // This gets filled in during mission.js's main(). After t
 let IsAges;
 let ACTIVE_TITLE;
 let ACTIVE_TITLE_INVERSE;
+let ACTIVE_TITLE_ID;
+let ACTIVE_TITLE_ID_INVERSE;
 
 // replaces variables originally hardcoded in data.js
 var DATA;
 var SCHEDULE_CYCLES;
 var ENGLISH_LOCALIZATION_STRING;
 
-async function main() {
-  determineActiveTitle();
-  await loadBuildString();
-  await loadDataFromAPI();
+const RUNTIME_CONFIG = window.__RUNTIME_CONFIG__ || {};
+const TITLE_ID_ADCOM = (RUNTIME_CONFIG.titleIds && RUNTIME_CONFIG.titleIds.adcom) || '6bf5';
+const TITLE_ID_AGES = (RUNTIME_CONFIG.titleIds && RUNTIME_CONFIG.titleIds.ages) || 'dc4bb';
 
-  loadModeSettings();
-  initializeLocalization();
-  initializeAbTestGroups();
-  initializeMissionData();
-  initializePopups();
-  initializeInputHandlers();
-  loadSaveData();
-  initializeIntervalFunctions();
-  renderMissions();
-  //finalSurveyConfigData();
+const LOCAL_SHARED_IMAGE_ALLOWLIST = new Set([
+  'calendar.png',
+  'switch_ab_test.png'
+]);
+
+const SHARED_COMMON_ICON_MAP = new Set([
+  'boost_power.png',
+  'comrade.png',
+  'comrades_per_second.png',
+  'crit_chance.png',
+  'crit_power.png',
+  'discount.png',
+  'gold.png',
+  'speed.png',
+  'trophy.png'
+]);
+
+const SHARED_EFFECT_ICON_REMAP = {
+  'card.png': 'effects/cards.png',
+  'boost_power.png': 'effects/output.png',
+  'crit_chance.png': 'effects/crit.png',
+  'comrades_per_second.png': 'effects/flag.png',
+  'crit_power.png': 'effects/power.png',
+  'discount.png': 'effects/price.png',
+  'speed.png': 'effects/speed.png'
+};
+
+const TRANSPARENT_PIXEL =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
+function showMissionsLoader() {
+  const missionsLoader = document.querySelector('#missionsLoader');
+  if (!missionsLoader) {
+    return;
+  }
+
+  const currentStyle = localStorage.getItem('StyleConfig') || 'light';
+  missionsLoader.classList.add('show');
+  missionsLoader.classList.toggle('text-light', currentStyle === 'dark');
+  missionsLoader.classList.toggle('text-secondary', currentStyle !== 'dark');
+}
+
+function hideMissionsLoader() {
+  const missionsLoader = document.querySelector('#missionsLoader');
+  if (!missionsLoader) {
+    return;
+  }
+
+  missionsLoader.classList.remove('show');
+}
+
+async function main() {
+  showMissionsLoader();
+
+  try {
+    determineActiveTitle();
+    applyStaticLegacyImageAttrs();
+    initializeLegacyAssetRewriteObserver();
+    rewriteLegacyAssetsInNode(document);
+
+    await loadBuildString();
+    await loadDataFromAPI();
+
+    loadModeSettings();
+    applyIconCssVariables();
+    rewriteLegacyStylesheetAssetUrls();
+    rewriteLegacyAssetsInNode(document);
+    initializeLocalization();
+    initializeAbTestGroups();
+    initializeMissionData();
+    initializePopups();
+    initializeInputHandlers();
+    loadSaveData();
+    initializeIntervalFunctions();
+    renderMissions();
+    rewriteLegacyStylesheetAssetUrls();
+    rewriteLegacyAssetsInNode(document);
+    //finalSurveyConfigData();
+  } finally {
+    hideMissionsLoader();
+  }
+}
+
+function normalizeTitleSegmentToId(segment) {
+  if (!segment) {
+    return ACTIVE_TITLE_ID || TITLE_ID_ADCOM;
+  }
+
+  const lower = segment.toLowerCase();
+  if (lower === 'adcom' || lower === TITLE_ID_ADCOM.toLowerCase()) {
+    return TITLE_ID_ADCOM;
+  }
+
+  if (lower === 'ages' || lower === TITLE_ID_AGES.toLowerCase()) {
+    return TITLE_ID_AGES;
+  }
+
+  return ACTIVE_TITLE_ID || TITLE_ID_ADCOM;
+}
+
+function getAssetBaseForTitleId(titleId) {
+  const byTitleMap = RUNTIME_CONFIG.assetBaseByTitleId || {};
+  if (byTitleMap[titleId]) {
+    return byTitleMap[titleId].replace(/\/+$/, '');
+  }
+
+  return '';
+}
+
+function getCurrentLoadedBalanceId() {
+  if (currentMode === 'event' && eventScheduleInfo && eventScheduleInfo.BalanceId) {
+    return eventScheduleInfo.BalanceId;
+  }
+
+  return 'evergreen';
+}
+
+function mapBalanceIdForAssetPath(balanceId) {
+  if (!balanceId) {
+    return balanceId;
+  }
+
+  if (balanceId === 'main' || balanceId === 'evergreen') {
+    return 'evergreen';
+  }
+
+  return balanceId.split('-')[0];
+}
+
+function mapThemeIdForAssetPath(themeId) {
+  const normalizedThemeId = mapBalanceIdForAssetPath(themeId);
+  if (!normalizedThemeId || typeof THEME_ID_OVERRIDES !== 'object' || THEME_ID_OVERRIDES === null) {
+    return normalizedThemeId;
+  }
+
+  // Ages legacy config maps canonical -> legacy theme folder names.
+  // For asset-server paths we need the canonical form, so invert that mapping.
+  for (const [canonicalThemeId, legacyThemeId] of Object.entries(THEME_ID_OVERRIDES)) {
+    if (legacyThemeId === normalizedThemeId) {
+      return canonicalThemeId;
+    }
+  }
+
+  return normalizedThemeId;
+}
+
+function ensurePngFileName(fileName) {
+  if (!fileName) {
+    return fileName;
+  }
+
+  return fileName.toLowerCase().endsWith('.png') ? fileName : `${fileName}.png`;
+}
+
+function getExperimentByRewardId(rewardIdInput) {
+  if (!rewardIdInput) {
+    return null;
+  }
+
+  const rewardId = String(rewardIdInput).trim();
+  if (!rewardId) {
+    return null;
+  }
+
+  const data = getData();
+  const experiments = (data && Array.isArray(data.Experiments)) ? data.Experiments : [];
+  if (experiments.length === 0) {
+    return null;
+  }
+
+  const exactMatch = experiments.find((experiment) => experiment && experiment.Id == rewardId);
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const lowerRewardId = rewardId.toLowerCase();
+  return experiments.find((experiment) =>
+    experiment &&
+    typeof experiment.Id !== 'undefined' &&
+    String(experiment.Id).toLowerCase() === lowerRewardId
+  ) || null;
+}
+
+function getExperimentIconKey(rewardIdInput) {
+  const experiment = getExperimentByRewardId(rewardIdInput);
+  if (!experiment || !experiment.IconKey) {
+    return '';
+  }
+
+  const iconKey = String(experiment.IconKey).trim();
+  return iconKey || '';
+}
+
+function getExperimentIconPathByRewardId(rewardIdInput) {
+  const iconKey = getExperimentIconKey(rewardIdInput);
+  if (!iconKey) {
+    return '';
+  }
+
+  const titleId = ACTIVE_TITLE_ID || TITLE_ID_ADCOM;
+  const assetBase = getAssetBaseForTitleId(titleId);
+  if (!assetBase) {
+    return '';
+  }
+
+  const normalizedBase = assetBase.replace(/\/+$/, '');
+  const titleScopedBase = normalizedBase.endsWith(`/${titleId}`)
+    ? normalizedBase
+    : `${normalizedBase}/${titleId}`;
+
+  return `${titleScopedBase}/common/experiments/${iconKey}.png`;
+}
+
+function assetUrlFromLegacy(legacyPath) {
+  return resolveAssetPathByLegacyPath(legacyPath);
+}
+
+function assetUrlForActive(relativePathFromTitleRoot) {
+  return assetUrlFromLegacy(`img/${ACTIVE_TITLE}/${relativePathFromTitleRoot}`);
+}
+
+function assetUrlForTitleSegment(titleSegment, relativePathFromTitleRoot) {
+  return assetUrlFromLegacy(`img/${titleSegment}/${relativePathFromTitleRoot}`);
+}
+
+function applyStaticLegacyImageAttrs() {
+  document.querySelectorAll('img[data-legacy-src]').forEach((imgEl) => {
+    const legacySrc = imgEl.getAttribute('data-legacy-src');
+    if (!legacySrc) {
+      return;
+    }
+
+    const normalizedLegacySrc = legacySrc.startsWith('img/') ? legacySrc : `img/${legacySrc}`;
+    const resolved = assetUrlFromLegacy(normalizedLegacySrc);
+    if (resolved) {
+      imgEl.setAttribute('src', resolved);
+    }
+  });
+}
+
+function setIconCssVar(varName, assetUrl) {
+  if (!assetUrl) {
+    return;
+  }
+  document.documentElement.style.setProperty(varName, `url("${assetUrl}")`);
+}
+
+function applyIconCssVariables() {
+  setIconCssVar('--icon-gacha-plastic', assetUrlForActive('shared/gacha/plastic.png'));
+  setIconCssVar('--icon-gacha-armored', assetUrlForActive('shared/gacha/armored.png'));
+  setIconCssVar('--icon-gacha-wood', assetUrlForActive('shared/gacha/wood.png'));
+  setIconCssVar('--icon-gacha-stone', assetUrlForActive('shared/gacha/stone.png'));
+  setIconCssVar('--icon-gacha-rare', assetUrlForActive('shared/gacha/rare.png'));
+  setIconCssVar('--icon-gacha-rankup', assetUrlForActive('shared/gacha/rankup.png'));
+  setIconCssVar('--icon-gacha-epic', assetUrlForActive('shared/gacha/epic.png'));
+  setIconCssVar('--icon-gacha-gold', assetUrlForActive('shared/gacha/gold.png'));
+  setIconCssVar('--icon-gacha-supreme', assetUrlForActive('shared/gacha/supreme.png'));
+
+  setIconCssVar('--icon-darkscience', assetUrlForActive('event/darkscience.png'));
+  setIconCssVar('--icon-science', assetUrlForActive('main/scientist.png'));
+  setIconCssVar('--icon-comrade', assetUrlForActive('shared/comrade.png'));
+  setIconCssVar('--icon-comrades-per-sec', assetUrlForActive('shared/comrades_per_second.png'));
+  setIconCssVar('--icon-boost-power', assetUrlForActive('shared/boost_power.png'));
+  setIconCssVar('--icon-discount', assetUrlForActive('shared/discount.png'));
+  setIconCssVar('--icon-crit-chance', assetUrlForActive('shared/crit_chance.png'));
+  setIconCssVar('--icon-crit-power', assetUrlForActive('shared/crit_power.png'));
+  setIconCssVar('--icon-speed', assetUrlForActive('shared/speed.png'));
+  setIconCssVar('--icon-card', assetUrlForActive('shared/card.png'));
+}
+
+function looksLikeResearcherAsset(filename) {
+  const basename = filename.split('.').slice(0, -1).join('.') || filename;
+  return /^[A-Z]{2,}\d{2,}$/.test(basename.toUpperCase());
+}
+
+function resolveAssetPathByLegacyPath(legacyPathInput) {
+  if (!legacyPathInput) {
+    return legacyPathInput;
+  }
+
+  let pathname;
+  try {
+    const parsedUrl = new URL(legacyPathInput, window.location.origin);
+    pathname = parsedUrl.pathname;
+  } catch (error) {
+    pathname = legacyPathInput;
+  }
+
+  const imgPrefixIndex = pathname.indexOf('/img/');
+  if (imgPrefixIndex === -1) {
+    return legacyPathInput;
+  }
+
+  const relativeAssetPath = pathname.slice(imgPrefixIndex + '/img/'.length);
+  const segments = relativeAssetPath.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return legacyPathInput;
+  }
+
+  let titleId = ACTIVE_TITLE_ID || TITLE_ID_ADCOM;
+  let rest = segments;
+  if (['adcom', 'ages', TITLE_ID_ADCOM, TITLE_ID_AGES].includes(segments[0].toLowerCase())) {
+    titleId = normalizeTitleSegmentToId(segments[0]);
+    rest = segments.slice(1);
+  }
+
+  if (rest.length === 0) {
+    return legacyPathInput;
+  }
+
+  if (rest[0] === 'shared' && LOCAL_SHARED_IMAGE_ALLOWLIST.has(rest[1])) {
+    return `/img/${rest[1]}`;
+  }
+
+  const currentBalanceId = mapBalanceIdForAssetPath(getCurrentLoadedBalanceId());
+  const fileName = rest[rest.length - 1];
+  let mappedRelative;
+
+  if (rest[0] === 'event' && fileName === 'darkscience.png') {
+    mappedRelative = `${titleId}/${currentBalanceId}/icon/darkscience.png`;
+  } else if (rest[0] === 'shared' && rest[1] === 'timewarps' && fileName.includes('timehack')) {
+    mappedRelative = titleId === TITLE_ID_AGES
+      ? `${titleId}/common/timehack/${fileName}`
+      : `${titleId}/${currentBalanceId}/icon/${fileName}`;
+  } else if (rest[0] === 'shared' && rest[1] === 'themeicons') {
+    const rawThemeId = fileName.replace(/\.png$/i, '');
+    const iconThemeId = mapThemeIdForAssetPath(rawThemeId || currentBalanceId);
+    mappedRelative = `${titleId}/${iconThemeId}/icon.png`;
+  } else if (rest[0] === 'shared' && SHARED_EFFECT_ICON_REMAP[fileName]) {
+    mappedRelative = `${titleId}/${currentBalanceId}/${SHARED_EFFECT_ICON_REMAP[fileName]}`;
+  } else if (rest[0] === 'event' && fileName === 'upgrade.png') {
+    mappedRelative = `${titleId}/common/upgrade_lte.png`;
+  } else if (rest[0] === 'event' && fileName === 'propaganda_boost_on.png') {
+    mappedRelative = `${titleId}/${currentBalanceId}/propaganda/propaganda_boost_on.png`;
+  } else if (rest[0] === 'event' && rest.length >= 3) {
+    mappedRelative = looksLikeResearcherAsset(fileName)
+      ? `${titleId}/${currentBalanceId}/researcher/${fileName}`
+      : `${titleId}/${currentBalanceId}/icon/${fileName}`;
+  } else if (rest[0] === 'main' && fileName === 'darkscience.png') {
+    mappedRelative = `${titleId}/evergreen/icon/scientist.png`;
+  } else if (rest[0] === 'main' && fileName === 'upgrade.png') {
+    mappedRelative = `${titleId}/common/upgrade.png`;
+  } else if (rest[0] === 'main' && fileName === 'propaganda_boost_on.png') {
+    mappedRelative = `${titleId}/evergreen/propaganda/propaganda_boost_on.png`;
+  } else if (rest[0] === 'main' && rest.length >= 2) {
+    mappedRelative = looksLikeResearcherAsset(fileName)
+      ? `${titleId}/evergreen/researcher/${fileName}`
+      : `${titleId}/evergreen/icon/${fileName}`;
+  } else if (rest[0] === 'shared' && rest[1] === 'avatars' && rest.length >= 3) {
+    mappedRelative = `${titleId}/avatars/${fileName}`;
+  } else if (rest[0] === 'shared' && ['blitz', 'surge', 'experiments'].includes(rest[1]) && rest.length >= 3) {
+    mappedRelative = `${titleId}/common/experiments/${fileName}`;
+  } else if (rest[0] === 'shared' && rest[1] === 'card' && rest.length >= 3) {
+    mappedRelative = `${titleId}/common/card/${fileName}`;
+  } else if (rest[0] === 'shared' && rest[1] === 'gacha' && rest.length >= 3) {
+    mappedRelative = `${titleId}/common/gacha/${fileName}`;
+  } else if (rest[0] === 'shared' && fileName.startsWith('leaderboard')) {
+    mappedRelative = `${titleId}/common/leaderboard/${fileName}`;
+  } else if (rest[0] === 'shared' && fileName.startsWith('propaganda')) {
+    mappedRelative = `${titleId}/common/propaganda/${fileName}`;
+  } else if (rest[0] === 'shared' && SHARED_COMMON_ICON_MAP.has(fileName)) {
+    mappedRelative = `${titleId}/common/${fileName}`;
+  } else if (rest[0] === 'shared' && rest.length >= 2) {
+    mappedRelative = `${titleId}/common/${fileName}`;
+  } else {
+    return legacyPathInput;
+  }
+
+  const titleBase = getAssetBaseForTitleId(titleId);
+  if (!titleBase) {
+    return legacyPathInput;
+  }
+
+  return `${titleBase.replace(/\/+$/, '')}/${mappedRelative.replace(`${titleId}/`, '')}`;
+}
+
+function rewriteStyleUrls(styleValue) {
+  if (!styleValue || styleValue.indexOf('img/') === -1) {
+    return styleValue;
+  }
+
+  return styleValue.replace(/url\((['"]?)(.*?)\1\)/g, (match, quote, path) => {
+    const rewritten = resolveAssetPathByLegacyPath(path);
+    if (!rewritten || rewritten === path) {
+      return match;
+    }
+
+    return `url(${quote}${rewritten}${quote})`;
+  });
+}
+
+function rewriteLegacyAssetsInNode(node) {
+  if (!node) {
+    return;
+  }
+
+  const candidateNodes = [];
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    candidateNodes.push(node);
+  }
+
+  if (node.querySelectorAll) {
+    node.querySelectorAll('img, [style*="img/"]').forEach((element) => {
+      candidateNodes.push(element);
+    });
+  }
+
+  for (const element of candidateNodes) {
+    if (element.tagName === 'IMG') {
+      const currentSrc = element.getAttribute('src') || element.src;
+      const rewrittenSrc = resolveAssetPathByLegacyPath(currentSrc);
+      if (rewrittenSrc && rewrittenSrc !== currentSrc) {
+        element.setAttribute('src', rewrittenSrc);
+      }
+    }
+
+    const styleAttr = element.getAttribute && element.getAttribute('style');
+    if (styleAttr && styleAttr.includes('img/')) {
+      const rewrittenStyle = rewriteStyleUrls(styleAttr);
+      if (rewrittenStyle !== styleAttr) {
+        element.setAttribute('style', rewrittenStyle);
+      }
+    }
+  }
+}
+
+function rewriteLegacyStylesheetAssetUrls() {
+  for (const stylesheet of Array.from(document.styleSheets)) {
+    let cssRules;
+    try {
+      cssRules = stylesheet.cssRules;
+    } catch (error) {
+      continue;
+    }
+
+    if (!cssRules) {
+      continue;
+    }
+
+    for (const rule of Array.from(cssRules)) {
+      if (!rule.style || !rule.style.backgroundImage) {
+        continue;
+      }
+
+      if (!rule.style.backgroundImage.includes('img/')) {
+        continue;
+      }
+
+      const rewritten = rewriteStyleUrls(`background-image: ${rule.style.backgroundImage};`)
+        .replace(/^background-image:\s*/i, '')
+        .replace(/;\s*$/, '');
+
+      if (rewritten && rewritten !== rule.style.backgroundImage) {
+        rule.style.backgroundImage = rewritten;
+      }
+    }
+  }
+}
+
+function initializeLegacyAssetRewriteObserver() {
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList') {
+        mutation.addedNodes.forEach((addedNode) => {
+          rewriteLegacyAssetsInNode(addedNode);
+        });
+      } else if (mutation.type === 'attributes') {
+        rewriteLegacyAssetsInNode(mutation.target);
+      }
+    }
+  });
+
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ['src', 'style']
+  });
 }
 
 // this whole function is hacky
@@ -46,31 +515,37 @@ function determineActiveTitle() {
     IsAges = true;
     ACTIVE_TITLE = 'ages';
     ACTIVE_TITLE_INVERSE = 'adcom';
+    ACTIVE_TITLE_ID = TITLE_ID_AGES;
+    ACTIVE_TITLE_ID_INVERSE = TITLE_ID_ADCOM;
 
     document.querySelector('title').innerText = 'AdVenture Ages Mission Tracker';
   } else {
     IsAges = false;
     ACTIVE_TITLE = 'adcom';
     ACTIVE_TITLE_INVERSE = 'ages';
+    ACTIVE_TITLE_ID = TITLE_ID_ADCOM;
+    ACTIVE_TITLE_ID_INVERSE = TITLE_ID_AGES;
   }
-
-  document.querySelectorAll('img').forEach((e) => {
-    if (e.classList.contains('imgStaticUrl')) {
-      return;
-    }
-
-    let href = e.src;
-    href = href.replace('img/', `img/${ACTIVE_TITLE}/`);
-    e.src = href;
-  });
-
-  document.querySelector('link[rel="shortcut icon"]').href = document.querySelector('link[rel="shortcut icon"]').href.replace('img/', `img/${ACTIVE_TITLE}/`);
 
   window.localStorage.setItem('activeTitle', ACTIVE_TITLE);
 
   configScript.src = `config_${ACTIVE_TITLE}.js`;
   missionsTitleCss.href = `missions_img_${ACTIVE_TITLE}.css`;
-  switchButtonIcon.src = `img/${ACTIVE_TITLE_INVERSE}/shared/comrades_per_second.png`;
+  missionsTitleCss.addEventListener('load', () => {
+    rewriteLegacyStylesheetAssetUrls();
+    rewriteLegacyAssetsInNode(document);
+  });
+
+  const avatarUnlocksMenuItem = document.querySelector('#avatarUnlocksMenuItem');
+  if (avatarUnlocksMenuItem) {
+    avatarUnlocksMenuItem.style.display = IsAges === false ? '' : 'none';
+  }
+
+  const inverseTitleBase = getAssetBaseForTitleId(ACTIVE_TITLE_ID_INVERSE);
+  switchButtonIcon.src = inverseTitleBase
+    ? `${inverseTitleBase.replace(/\/+$/, '')}/icon.png`
+    : assetUrlForTitleSegment(ACTIVE_TITLE_INVERSE, 'shared/comrades_per_second.png');
+  document.querySelector('link[rel="shortcut icon"]').href = assetUrlForActive('shared/gacha/stone.png');
 
   document.body.appendChild(configScript);
   document.head.appendChild(missionsTitleCss);
@@ -95,7 +570,7 @@ async function loadBuildString() {
 }
 
 async function loadDataFromAPI() {
-  const titleId = IsAges ? 'dc4bb' : '6bf5';
+  const titleId = IsAges ? TITLE_ID_AGES : TITLE_ID_ADCOM;
   const endpoint = `api/data/${titleId}`;
 
   const dataFiles = await fetch(endpoint)
@@ -239,14 +714,14 @@ function loadModeSettings() {
   let themeId = eventScheduleInfo.ThemeId;
   let basicEventName = getBasicEventName((currentMode != "main") ? themeId : "main");
 
-  let iconSrc = `img/${ACTIVE_TITLE}/shared/themeicons/${(currentMode == "main") ? "main" : themeId}.png`;
+  let iconSrc = assetUrlForActive(`shared/themeicons/${(currentMode == "main") ? "main" : themeId}.png`);
   let eventIcon = `<img class="scheduleIcon" src="${iconSrc}">`;
   
   // The top-left dropdown always shows the current event, regardless of overrides.
   let trueCurrentEvent = getCurrentEventInfo();
   let trueCurrentEventTitle = THEME_ID_TITLE_OVERRIDES[trueCurrentEvent.ThemeId] || trueCurrentEvent.ThemeId;
   trueCurrentEventTitle = upperCaseFirstLetter(trueCurrentEventTitle);
-  let trueEventIcon = `<img class="scheduleIcon" src="img/${ACTIVE_TITLE}/shared/themeicons/${trueCurrentEvent.ThemeId}.png">`;
+  let trueEventIcon = `<img class="scheduleIcon" src="${assetUrlForActive(`shared/themeicons/${trueCurrentEvent.ThemeId}.png`)}">`;
   
   $('#mode-select-title').html(`${eventIcon} ${basicEventName}`);
   $('#mode-select-title').addClass("show");
@@ -377,7 +852,7 @@ function getSchedulePopupEvent(eventInfo) {
     }
 
     let sectionId = `schedule-${id}rewards-${lteId}`; // LteId is used so that it doesn't change all of the displays in the popup
-    let navButtonIconPath = `img/${ACTIVE_TITLE}/shared/leaderboard-${id}.png`;
+    let navButtonIconPath = assetUrlForActive(`shared/leaderboard-${id}.png`);
 
     let navButtonHtml = `     
       <li class="nav-item">
@@ -473,7 +948,7 @@ function getSchedulePopupEvent(eventInfo) {
   return `
     <div class="card">
       <div class="card-header scheduleHeader ${headerClasses}" data-toggle="collapse" data-target="#scheduleBody-${lteId}" aria-controls="scheduleBody-${lteId}">
-        <img src='img/${ACTIVE_TITLE}/shared/themeicons/${eventInfo.ThemeId}.png' class="scheduleIconLarge">
+        <img src='${assetUrlForActive(`shared/themeicons/${eventInfo.ThemeId}.png`)}' class="scheduleIconLarge">
         ${startShort} - ${endShort}
         <span class="float-right">${top3RewardIcons} <span class="ml-2">(+)</span></span>
       </div>
@@ -518,7 +993,7 @@ function getAllEventBalanceHtml() {
   let data = `
   <div class="card">
     <div class="card-header scheduleHeader" data-toggle="collapse" data-target="#scheduleBody-main" aria-controls="scheduleBody-main">
-      <img src='img/${ACTIVE_TITLE}/shared/themeicons/main.png' class="scheduleIconLarge">
+      <img src='${assetUrlForActive('shared/themeicons/main.png')}' class="scheduleIconLarge">
       ${THEME_ID_TITLE_OVERRIDES["main"]}
       <span class="float-right"><span class="ml-2">(+)</span></span>
     </div>
@@ -554,7 +1029,7 @@ function getAllEventBalanceHtml() {
     data += `
       <div class="card">
         <div class="card-header scheduleHeader" data-toggle="collapse" data-target="#scheduleBody-${originalId}" aria-controls="scheduleBody-${themeId}">
-          <img src='img/${ACTIVE_TITLE}/shared/themeicons/${originalId}.png' class="scheduleIconLarge">
+          <img src='${assetUrlForActive(`shared/themeicons/${originalId}.png`)}' class="scheduleIconLarge">
           ${name}
           <span class="float-right"><span class="ml-2">(+)</span></span>
         </div>
@@ -1321,8 +1796,8 @@ function renderMissions() {
       let firstFreeId = getData().GachaFreeCycle[0].ScriptId;
       if (rank == 1 && firstFreeId) {
         let firstFreeScripted = getData().GachaScripts.find(script => script.GachaId == firstFreeId);
-        let freeScience = `${firstFreeScripted.Science} <img class='rewardIcon' src='img/${ACTIVE_TITLE}/event/darkscience.png'> `;
-        let freeResearchers = firstFreeScripted.Card.map(card => `<span class='text-nowrap'>${card.Value}x <img class='rewardIcon' src='img/${ACTIVE_TITLE}/shared/card.png'> ${researcherName(card.Id)}</span>`);
+        let freeScience = `${firstFreeScripted.Science} <img class='rewardIcon' src='${assetUrlForActive('event/darkscience.png')}'> `;
+        let freeResearchers = firstFreeScripted.Card.map(card => `<span class='text-nowrap'>${card.Value}x <img class='rewardIcon' src='${assetUrlForActive('shared/card.png')}'> ${researcherName(card.Id)}</span>`);
         let freeRewards = [freeScience, ...freeResearchers].join(', ');
         popupHtml += `${popupHtml ? "<hr />" : ""}<strong>First Free Capsule:</strong><br />${freeRewards}`;
       }
@@ -1386,7 +1861,7 @@ function getHelpHtml(isPopup) {
         <li class="my-1">If the capsule <span class="scriptedRewardInfo resourceIcon ${capsuleIcon}">&nbsp;</span> is circled, you can also view the <strong>pre-scripted rewards</strong>.</li>
         <li class="my-1">The header contains four sub-menus with different features:
         <ol>
-            <li class="my-1">Click <span class="resourceIcon" style="background-image:url('img/${ACTIVE_TITLE}/shared/themeicons/${themeId}.png')">&nbsp;</span> to view infomation about the <strong>current balance</strong>.</li>
+            <li class="my-1">Click <span class="resourceIcon" style="background-image:url('${assetUrlForActive(`shared/themeicons/${themeId}.png`)}')">&nbsp;</span> to view infomation about the <strong>current balance</strong>.</li>
             <li class="my-1">Click <span class="resourceIcon" style="background-image:url('${getImageDirectory()}/${firstResourceId}.png')">&nbsp;</span> to view all <strong>Resources/Generators</strong>.</li>
             <li class="my-1">Click <span class="resourceIcon cardIcon">&nbsp;</span> to view all <strong>${wordForResearchers}</strong>.</li>
             <li class="my-1">Click <span class="resourceIcon comradesPerSec">&nbsp;</span> to view all <strong>${resourceName('comrade', false).toLowerCase()} trades</strong>.</li>
@@ -1481,10 +1956,10 @@ function getRankAdvanceHtml() {
 
   if (currentMode === 'main') {
     currentText = 'Please enter the rank to navigate to.';
-    iconUrl = `img/${ACTIVE_TITLE}/shared/themeicons/main.png`
+    iconUrl = assetUrlForActive('shared/themeicons/main.png')
   } else {
     currentText = 'Please enter the rank to navigate to.<br>All previous missions will be marked as complete.';
-    iconUrl = `img/${ACTIVE_TITLE}/shared/themeicons/${eventScheduleInfo.ThemeId}.png`;
+    iconUrl = assetUrlForActive(`shared/themeicons/${eventScheduleInfo.ThemeId}.png`);
   }
 
   return `<div id="rank-${currentMode}-holder">
@@ -1555,7 +2030,7 @@ function renderListStyleMissions() {
     
     missionHtml += `<a type="button" class="btn btn-outline-secondary" onclick="selectNewRank()" title="Jump to specific Rank">#</a>`;
     
-    if (currentMainRank < DATA.main.Ranks.length) {
+    if (currentMainRank < DATA.evergreen.Ranks.length) {
       missionHtml += `<a href="?rank=${currentMainRank + 1}" type="button" class="btn btn-outline-secondary" title="Go forward to Rank ${currentMainRank + 1}">&rarr;</a>`;
     }
     
@@ -1645,8 +2120,8 @@ function describeScheduleRankReward(reward, includePopup = true, eventInfo = {})
           }
           else {
             avatarName = ENGLISH_MAP[`avatar.avatar.rarity.${relatedAvatar.Rarity.toLowerCase()}`];
-            let visualKey = relatedAvatar['VisualKey'].replace(".png","");
-            avatarIcon = `<span class="rewardListIconWrapper"><img class='mx-1 rewardIcon' src='img/${ACTIVE_TITLE}/shared/avatars/${visualKey}.png'></span>`;
+            let visualKey = ensurePngFileName(relatedAvatar['VisualKey']);
+            avatarIcon = `<span class="rewardListIconWrapper"><img class='mx-1 rewardIcon' src='${assetUrlForActive(`shared/avatars/${visualKey}`)}'></span>`;
   
             return `${avatarIcon}${avatarName}`;
           }
@@ -1710,21 +2185,30 @@ function renderMissionButton(mission, rank, missionEtas) {
         rewardImageClasses += isScripted ? " scriptedRewardInfo" : ""
 
         let rewardGachaId = isScripted ? scriptIdSearch[0]["MimicGachaId"] : rewardId
-        rewardIconSrc = `img/${ACTIVE_TITLE}/shared/gacha/${rewardGachaId}.png`
+        rewardIconSrc = assetUrlForActive(`shared/gacha/${rewardGachaId}.png`)
     }
     else if (rewardType == "Resources") {
         if (rewardId == 'gold') {
-            rewardIconSrc = `img/${ACTIVE_TITLE}/shared/gold.png`;
+            rewardIconSrc = assetUrlForActive('shared/gold.png');
         }
         else if (rewardId.includes('timehack_')) {
-            rewardIconSrc = `img/${ACTIVE_TITLE}/shared/timewarps/${rewardId}.png`
+            rewardIconSrc = assetUrlForActive(`shared/timewarps/${rewardId}.png`)
         }
         else {
+            const experimentIconPath = getExperimentIconPathByRewardId(rewardId);
+            if (experimentIconPath) {
+                rewardIconSrc = experimentIconPath;
+            }
+            else {
             // Luckily this only occurs for Motherland rewards
             // Must need to have a method of implementing for events in the future somehow
             // ('GetCurrentTheme()' ?)
-            rewardIconSrc = `img/${ACTIVE_TITLE}/main/${rewardId}.png`
+            rewardIconSrc = assetUrlForActive(`main/${rewardId}.png`)
+            }
         }
+    }
+    else if (rewardType == "Experiment") {
+        rewardIconSrc = getExperimentIconPathByRewardId(rewardId) || assetUrlForActive(`main/${rewardId}.png`);
     }
 
     let rewardButton = `<a href="javascript:void(0);" style="background-image:url('${rewardIconSrc}')" class="infoButton ${rewardImageClasses} resourceIcon ml-1" data-toggle="modal" data-target="#infoPopup" data-mission="${mission.Id}" title="Click for mission info/calc">&nbsp;</a>`
@@ -1990,6 +2474,11 @@ function getResource(id) {
 }
 
 function resourceName(resourceId, isPluralized = true) {
+  const experimentName = ENGLISH_MAP[`experiment.${resourceId}.name`];
+  if (getExperimentIconKey(resourceId) && experimentName) {
+    return experimentName;
+  }
+
   if (resourceId.includes('timehack')) {
     return ENGLISH_MAP[`store.bundleitem.${resourceId}.${isPluralized ? 'plural' : 'name'}`];
   }
@@ -2031,7 +2520,7 @@ function describeMission(mission, overrideIcon = "") {
       textHtml =`${upperCaseFirstLetter(ENGLISH_MAP['conditionmodel.trade.singular'])} ${resourceName(condition.ConditionId)} (${condition.Threshold})`;
       break;
     case "ResearchersUpgradedSinceSubscription": {
-      let overrideDirectory = (currentMode == "event") ? `img/${ACTIVE_TITLE}/event` : "";
+      let overrideDirectory = (currentMode == "event") ? assetUrlForActive('event') : "";
       iconHtml = getMissionIcon("upgrade", condition.ConditionType, overrideIcon, overrideDirectory);
       textHtml = `${ENGLISH_MAP['mission.researchersupgradedsincesubscription.any.simplename']} (${condition.Threshold})`;
       break;
@@ -2049,11 +2538,11 @@ function describeMission(mission, overrideIcon = "") {
       textHtml = `Collect ${resourceName(condition.ConditionId)} (${bigNum(condition.Threshold).replace(/ /g, '&nbsp;')})`;
       break;
     } case "ResearcherCardsEarnedSinceSubscription": {
-      iconHtml = getMissionIcon("card", condition.ConditionType, overrideIcon, `img/${ACTIVE_TITLE}/shared`);
+      iconHtml = getMissionIcon("card", condition.ConditionType, overrideIcon, assetUrlForActive('shared'));
       textHtml = `Collect Cards (${condition.Threshold})`;
       break;
     } case "ResourcesSpentSinceSubscription": {
-      let overrideDirectory = (currentMode == "event") ? `img/${ACTIVE_TITLE}/event` : "";  // Use /img/${ACTIVE_TITLE}/event/ of /img/${ACTIVE_TITLE}/event/theme/
+      let overrideDirectory = (currentMode == "event") ? assetUrlForActive('event') : "";
       iconHtml = getMissionIcon(condition.ConditionId, condition.ConditionType, overrideIcon, overrideDirectory);
       textHtml = `Spend ${resourceName(condition.ConditionId)} (${condition.Threshold})`;
       break;
@@ -2114,27 +2603,39 @@ function getRewardIcon(reward, imageOnly = false) {
   
     switch (Reward) {
       case "Gacha": 
-        imgPath = `img/${ACTIVE_TITLE}/shared/gacha/${RewardId}`; 
+        imgPath = assetUrlForActive(`shared/gacha/${RewardId}`); 
         break;
       
       case "Researcher": 
-        imgPath = `img/${ACTIVE_TITLE}/shared/card/card-${RewardId}`; 
+        imgPath = assetUrlForActive(`shared/card/card-${RewardId}`); 
+        break;
+
+      case "Experiment":
+        imgPath = getExperimentIconPathByRewardId(RewardId) || assetUrlForActive(`main/${RewardId}`);
         break;
         
       default:
         if (RewardId.includes('timehack')) {
-          imgPath = `img/${ACTIVE_TITLE}/shared/timewarps/${RewardId}`;
-        }
-        else if (RewardId == 'gold') {
-          imgPath = `img/${ACTIVE_TITLE}/shared/gold`;
+          imgPath = assetUrlForActive(`shared/timewarps/${RewardId}`);
         }
         else {
-          imgPath = `img/${ACTIVE_TITLE}/main/${RewardId}`;
+          const experimentIconPath = getExperimentIconPathByRewardId(RewardId);
+          if (experimentIconPath) {
+            imgPath = experimentIconPath;
+          }
+          else if (RewardId == 'gold') {
+            imgPath = assetUrlForActive('shared/gold');
+          }
+          else {
+            imgPath = assetUrlForActive(`main/${RewardId}`);
+          }
         }
         break;
     }
-  
-    let imgHtml = `<img class='mx-1 rewardIcon' src='${imgPath}.png'>`
+
+    const imgSrc = imgPath.toLowerCase().endsWith('.png') ? imgPath : `${imgPath}.png`;
+    let imgHtml = `<img class='mx-1 rewardIcon' src='${imgSrc}'>`
+
     if (imageOnly || Reward == "Gacha") {
       return imgHtml;
     }
@@ -2293,10 +2794,10 @@ function getImageDirectory(overrideDirectory = "") {
     let themeId = eventScheduleInfo.ThemeId;
     themeId = THEME_ID_OVERRIDES[themeId] || themeId;
     themeId = THEME_DUPLICATE_OVERRIDES[themeId] || themeId;
-    return `img/${ACTIVE_TITLE}/${currentMode}/${themeId}`;
+    return assetUrlForActive(`${currentMode}/${themeId}`);
   }
 
-  return `img/${ACTIVE_TITLE}/${currentMode}`;
+  return assetUrlForActive(currentMode);
 }
 
 // Used in describeMission to get an approriate icon based on the settings and resource involved.
@@ -2360,6 +2861,7 @@ var StylesheetUrls = {
 // Run whenever the style setting changes (OnClick) or is initialized.
 function setStyle(styleType) {
   setGlobal('StyleConfig', styleType);
+  document.documentElement.classList.remove('preload-dark');
   
   $('#config-style-dark').removeClass('active');
   if (styleType == "dark") {
@@ -2896,27 +3398,27 @@ function getBalanceInfoPopup() {
             
             aviDat = aviDat[0];
             let avatarName = ENGLISH_MAP[`avatar.avatar.rarity.${aviDat.Rarity.toLowerCase()}`];
-            let visualKey = aviDat['VisualKey'].replace(".png","");
-            let avatarIcon = `<span class="rewardListIconWrapper"><img class='mx-1 rewardIcon' src='img/${ACTIVE_TITLE}/shared/avatars/${visualKey}.png'></span>`;
+            let visualKey = ensurePngFileName(aviDat['VisualKey']);
+            let avatarIcon = `<span class="rewardListIconWrapper"><img class='mx-1 rewardIcon' src='${assetUrlForActive(`shared/avatars/${visualKey}`)}'></span>`;
             rewardContent = `x${bigNum(j['Value'])} ${avatarIcon} ${avatarName}`
           break;
 
           case "Gacha":
             rewardId = rewardId.toLowerCase();
-            let capsuleImageUrl = `<img class='rewardIcon' src='img/${ACTIVE_TITLE}/shared/gacha/${rewardId}.png'>`
+            let capsuleImageUrl = `<img class='rewardIcon' src='${assetUrlForActive(`shared/gacha/${rewardId}.png`)}'>`
             rewardContent = `x${bigNum(j['Value'])} ${capsuleImageUrl} ${ENGLISH_MAP[`gacha.${rewardId}.name`]} Capsule`;
           break;
 
           case "Resources":
             rewardId = rewardId.toLowerCase();
 
-            let resourcePlurality = (j['Value'] === 1) ? "singular" : "plural"
-            let resourceName = ENGLISH_MAP[`resource.${rewardId}.${resourcePlurality}`];
+            const isResourcePlural = (j['Value'] !== 1);
+            let resourceDisplayName = resourceName(rewardId, isResourcePlural);
 
             let resourceFixedUrls = {
-              'scientist': `img/${ACTIVE_TITLE}/main/scientist`,
-              'darkscience': `img/${ACTIVE_TITLE}/event/darkscience`,
-              'gold': `img/${ACTIVE_TITLE}/shared/gold`
+              'scientist': assetUrlForActive('main/scientist'),
+              'darkscience': assetUrlForActive('event/darkscience'),
+              'gold': assetUrlForActive('shared/gold')
             };
             
             let resourceImageUrl;
@@ -2924,30 +3426,38 @@ function getBalanceInfoPopup() {
               resourceImageUrl = resourceFixedUrls[rewardId];
             }
             else if (rewardId.includes('timehack')) {
-              resourceImageUrl = `img/${ACTIVE_TITLE}/shared/timewarps/${rewardId}`;
+              resourceImageUrl = assetUrlForActive(`shared/timewarps/${rewardId}`);
+            }
+            else {
+              const experimentIconPath = getExperimentIconPathByRewardId(rewardId);
+              if (experimentIconPath) {
+                resourceImageUrl = experimentIconPath;
+              }
+              else {
+              resourceImageUrl = assetUrlForActive(`main/${rewardId}`);
+              }
             }
 
-            let resourceImage = `<img class='rewardIcon' src='${resourceImageUrl}.png'>`;
-            rewardContent = `x${bigNum(j['Value'])} ${resourceImage} ${resourceName}`;
+            const resourceImageSrc = resourceImageUrl.toLowerCase().endsWith('.png') ? resourceImageUrl : `${resourceImageUrl}.png`;
+            let resourceImage = `<img class='rewardIcon' src='${resourceImageSrc}'>`;
+            rewardContent = `x${bigNum(j['Value'])} ${resourceImage} ${resourceDisplayName}`;
           break;
+
 
           case "Researcher":
             let researcherInfo = `<span class="text-nowrap">${describeResearcher(getData().Researchers.find(r => r.Id == rewardId), "right")}</span>`
             rewardContent = `x${bigNum(j['Value'])}${researcherInfo}`
           break;
 
-          case "Experiment":
-            // As of writing, this will never run on Ages
-            // Blitz IDs seem to be hard coded, so we can hardcode these
-            let blitzIdUrl = {
-              "EX180": "blitz-mini",
-              "EX181": "blitz-standard",
-              "EX182": "blitz-mega"
-            };
-            
-            let experimentImageUrl = `<img class='rewardIcon' src='img/${ACTIVE_TITLE}/shared/blitz/${blitzIdUrl[rewardId]}.png'>`;
-            rewardContent = `x${bigNum(j['Value'])} ${experimentImageUrl} ${ENGLISH_MAP[`experiment.${rewardId}.name`]}`;
+          case "Experiment": {
+            const experimentIconPath = getExperimentIconPathByRewardId(rewardId);
+            const experimentName = ENGLISH_MAP[`experiment.${rewardId}.name`] || rewardId;
+            const experimentImageSrc = experimentIconPath || assetUrlForActive(`main/${rewardId}.png`);
+            const experimentImageUrl = `<img class='rewardIcon' src='${experimentImageSrc}'>`;
+            rewardContent = `x${bigNum(j['Value'])} ${experimentImageUrl} ${experimentName}`;
           break;
+          }
+
 
           default:
             rewardContent = 'Unknown Reward Type (please report this or check console for more information)';
@@ -3052,7 +3562,7 @@ function getAllIndustryPopup() {
 }
 
 function getScriptedCapsulesPopup() {
-    let firstCapsuleIconUrl = `img/${ACTIVE_TITLE}/shared/gacha/${getData().GachaLootTable[0].Id}.png`;
+    let firstCapsuleIconUrl = assetUrlForActive(`shared/gacha/${getData().GachaLootTable[0].Id}.png`);
 
     return `
         <div class="keyboardShortcutHolder">
@@ -3128,10 +3638,10 @@ function getScriptedsByCapsule() {
             rewardsList += `<span class="resourceIcon ${scienceId}">&nbsp</span> ${shortBigNum(script.Science)} ${scienceName}<br/>`;
         }
         if (script.Gold > 0) {
-            rewardsList += `<img class="resourceIcon" src="img/${ACTIVE_TITLE}/shared/gold.png"> ${shortBigNum(script.Gold)} ${resourceName('gold')}<br/>`
+            rewardsList += `<img class="resourceIcon" src="${assetUrlForActive('shared/gold.png')}"> ${shortBigNum(script.Gold)} ${resourceName('gold')}<br/>`
         }
         if (script.Trophy > 0) {
-            rewardsList += `<img class="resourceIcon" src="img/${ACTIVE_TITLE}/shared/trophy.png"> ${shortBigNum(script.Trophy)} ${resourceName('trophy')}<br/>`
+            rewardsList += `<img class="resourceIcon" src="${assetUrlForActive('shared/trophy.png')}"> ${shortBigNum(script.Trophy)} ${resourceName('trophy')}<br/>`
         }
 
         script.Card.forEach(rs => {
@@ -3407,8 +3917,8 @@ function getAvatarTablePopup() {
 
   for (let avi of avatars) {
     let aviRarity = ENGLISH_MAP[`avatar.avatar.rarity.${avi.Rarity.toLowerCase()}`];
-    let aviIconSrc = `img/${ACTIVE_TITLE}/shared/avatars/${avi.VisualKey}`;
-    let aviDisplay = `<img class="mx-1 rewardIcon" src='${aviIconSrc}.png'> ${aviRarity}`;
+    let aviIconSrc = assetUrlForActive(`shared/avatars/${ensurePngFileName(avi.VisualKey)}`);
+    let aviDisplay = `<img class="mx-1 rewardIcon" src='${aviIconSrc}'> ${aviRarity}`;
     let aviUnlock = "Unknown unlock requirement";
 
     if (Object.keys(avi).includes("UnlockLocation")) {
@@ -3490,7 +4000,7 @@ function getGeneratorsTab(mission, industryId) {
   
   let cpsDefaultValue = formValues.Trades.TotalComrades || "";
   html += getResourceInput("comrades", `# of ${resourceName('comrade')}`, `${imgDirectory}/comrade.png`, `# of ${resourceName('comrade')}`);
-  html += getResourceInput("comradesPerSec", `${resourceName('comrade')}/second`, `img/${ACTIVE_TITLE}/shared/comrades_per_second.png`, `${resourceName('comrade')} Per Second`, cpsDefaultValue);
+  html += getResourceInput("comradesPerSec", `${resourceName('comrade')}/second`, assetUrlForActive('shared/comrades_per_second.png'), `${resourceName('comrade')} Per Second`, cpsDefaultValue);
   
   return html;
 }
@@ -3610,18 +4120,18 @@ function describeGenerator(generator, researchers, formValues) {
     let totalPerSec = qtyProduced * (genValues.CritChance * genValues.CritPower + 1 - genValues.CritChance) / genTime;
     if (totalPerSec < 1e4) totalPerSec = totalPerSec.toPrecision(3);
 
-    let scienceIconPath = `img/${ACTIVE_TITLE}/${currentMode}/${generator.ObjectiveReward.RewardId}.png`;
+    let scienceIconPath = assetUrlForActive(`${currentMode}/${generator.ObjectiveReward.RewardId}.png`);
 
     let generatorOutputs = `
         <strong>Generates:</strong><br/>
         <img class='resourceIcon mr-1' src='${imgDirectory}/${generator.Generate.Resource}.png' title='${resourceName(generator.Generate.Resource)}'>
-        ${shortBigNum(qtyProduced)} per <img class='resourceIcon mx-1' src='img/${ACTIVE_TITLE}/shared/speed.png'>${getEta(genTime)}<div class='my-3'></div>
+        ${shortBigNum(qtyProduced)} per <img class='resourceIcon mx-1' src='${assetUrlForActive('shared/speed.png')}'>${getEta(genTime)}<div class='my-3'></div>
 
-        <img class='resourceIcon mr-1' src='img/${ACTIVE_TITLE}/shared/boost_power.png' title='Power'>x${shortBigNum(genValues.Power)}
-        <img class='resourceIcon mx-1' src='img/${ACTIVE_TITLE}/shared/discount.png' title='Discount'>x${shortBigNum(genValues.CostReduction)}
-        <img class='resourceIcon mx-1' src='img/${ACTIVE_TITLE}/shared/speed.png' title='Speed'>x${shortBigNum(genValues.Speed)}<div class='my-1'></div>
-        <img class='resourceIcon mr-1' src='img/${ACTIVE_TITLE}/shared/crit_chance.png' title='Crit Chance'>${shortBigNum(genValues.CritChance * 100)}%
-        <img class='resourceIcon mx-1' src='img/${ACTIVE_TITLE}/shared/crit_power.png' title='Crit Power'>x${shortBigNum(genValues.CritPower)}<div class='my-3'></div>
+        <img class='resourceIcon mr-1' src='${assetUrlForActive('shared/boost_power.png')}' title='Power'>x${shortBigNum(genValues.Power)}
+        <img class='resourceIcon mx-1' src='${assetUrlForActive('shared/discount.png')}' title='Discount'>x${shortBigNum(genValues.CostReduction)}
+        <img class='resourceIcon mx-1' src='${assetUrlForActive('shared/speed.png')}' title='Speed'>x${shortBigNum(genValues.Speed)}<div class='my-1'></div>
+        <img class='resourceIcon mr-1' src='${assetUrlForActive('shared/crit_chance.png')}' title='Crit Chance'>${shortBigNum(genValues.CritChance * 100)}%
+        <img class='resourceIcon mx-1' src='${assetUrlForActive('shared/crit_power.png')}' title='Crit Power'>x${shortBigNum(genValues.CritPower)}<div class='my-3'></div>
 
         Each Outputs: <img class='resourceIcon mr-1' src='${imgDirectory}/${generator.Generate.Resource}.png' title='${resourceName(generator.Generate.Resource)}'>${shortBigNum(totalPerSec)}/sec<br/>
         <img class='mx-1 rewardIcon' src='${scienceIconPath}'>${shortBigNum(generator.ObjectiveReward.Value)} per bubble earned
@@ -3915,7 +4425,7 @@ function getPropagandaBoostCard(formValues) {
   let level = formValues.ResearcherLevels.PropagandaBoost || 0;
   
   let imgDirectory = getImageDirectory();
-  let backgroundImageUrl = (level == 0) ? `img/${ACTIVE_TITLE}/shared/propaganda_boost_off.png` : `${imgDirectory}/propaganda_boost_on.png`;
+  let backgroundImageUrl = (level == 0) ? assetUrlForActive('shared/propaganda_boost_off.png') : `${imgDirectory}/propaganda_boost_on.png`;
   let targetIconUrl = `${imgDirectory}/multi-industry.png`;
   
   let levelText = (level == 0) ? "Inactive" : "Active";

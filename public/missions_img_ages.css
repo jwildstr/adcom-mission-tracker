@@ -1,78 +1,40 @@
 .altMissionButton {
-  background-image: url("img/ages/shared/switch_ab_test.png");
+  background-image: var(--ab-switch-icon);
 }
 
-.plastic {
-  background-image: url("img/ages/shared/gacha/plastic.png");
-}
+.plastic { background-image: var(--icon-gacha-plastic); }
+.armored { background-image: var(--icon-gacha-armored); }
+.wood { background-image: var(--icon-gacha-wood); }
+.stone { background-image: var(--icon-gacha-stone); }
+.rare { background-image: var(--icon-gacha-rare); }
+.rankup { background-image: var(--icon-gacha-rankup); }
+.epic { background-image: var(--icon-gacha-epic); }
+.gold { background-image: var(--icon-gacha-gold); }
+.supreme { background-image: var(--icon-gacha-supreme); }
 
-.armored {
-  background-image: url("img/ages/shared/gacha/armored.png");
-}
+.darkscience { background-image: var(--icon-darkscience); }
+.science { background-image: var(--icon-science); }
+.comrades { background-image: var(--icon-comrade); }
 
-.wood {
-  background-image: url("img/ages/shared/gacha/wood.png");
-}
+.comradesPerSec,
+.TradePayoutMultiplier { background-image: var(--icon-comrades-per-sec); }
 
-.stone {
-  background-image: url("img/ages/shared/gacha/stone.png");
-}
+.power,
+.GeneratorPayoutMultiplier { background-image: var(--icon-boost-power); }
 
-.rare {
-  background-image: url("img/ages/shared/gacha/rare.png");
-}
+.discount,
+.GeneratorCostReduction { background-image: var(--icon-discount); }
 
-.rankup {
-  background-image: url("img/ages/shared/gacha/rankup.png");
-}
+.critChance,
+.GeneratorCritChance { background-image: var(--icon-crit-chance); }
 
-.epic {
-  background-image: url("img/ages/shared/gacha/epic.png");
-}
+.critPower,
+.GeneratorCritPowerMult { background-image: var(--icon-crit-power); }
 
-.supreme {
-  background-image: url("img/ages/shared/gacha/supreme.png");
-}
+.speed,
+.GenManagerAndSpeedMult { background-image: var(--icon-speed); }
 
-.darkscience {
-  background-image: url("img/ages/event/darkscience.png");
-}
-
-.science {
-  background-image: url("img/ages/main/scientist.png");
-}
-
-.comrades {
-  background-image: url("img/ages/shared/comrade.png");
-}
-
-.comradesPerSec, .TradePayoutMultiplier {
-  background-image: url("img/ages/shared/comrades_per_second.png");
-}
-
-.power, .GeneratorPayoutMultiplier {
-  background-image: url("img/ages/shared/boost_power.png");
-}
-
-.discount, .GeneratorCostReduction {
-  background-image: url("img/ages/shared/discount.png");
-}
-
-.critChance, .GeneratorCritChance {
-  background-image: url("img/ages/shared/crit_chance.png");
-}
-
-.critPower, .GeneratorCritPowerMult {
-  background-image: url("img/ages/shared/crit_power.png");
-}
-
-.speed, .GenManagerAndSpeedMult {
-  background-image: url("img/ages/shared/speed.png");
-}
-
-.cardIcon {
-  background-image: url("img/ages/shared/card.png");
-}
+.cardIcon { background-image: var(--icon-card); }
 
 /* CSS specific to Ages */
 
