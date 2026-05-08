@@ -12,6 +12,6 @@ COPY README.md package.json package-lock.json ./
 
 RUN npm install --omit=dev
 
-EXPOSE 3000
+EXPOSE 3001
 
 CMD ["npm", "start"]

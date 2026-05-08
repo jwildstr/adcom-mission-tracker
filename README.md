@@ -22,13 +22,19 @@ The `.env` file should be structured as follows:
 | Variable | Required | Description |
 |---|---|---|
 | `PORT` | Yes | Express server port. |
-| `ASSET_SERVER` | Yes | Backend-to-backend asset server base URL. |
+| `ASSET_SERVER` | Yes | Backend-to-backend asset server base URL (Docker service URL in dev, private internal URL in prod). |
 | `ASSET_PUBLIC_BASE` | Yes | Browser-facing asset root URL for images/JSON (for example, `http://localhost:3002/assets`). |
 | `PLAYFAB_TITLE_ID_ADCOM` | Yes | AdVenture Communist PlayFab Title ID (`6bf5`) |
 | `PLAYFAB_TITLE_ID_AGES` | Yes | AdVenture Ages PlayFab Title ID (`dc4bb`) |
 
-`ASSET_SERVER` is used by backend proxy routes (`/api/data/:title`, `/api/admin/data-file`).
-`ASSET_PUBLIC_BASE` is used by the browser to resolve image assets from the `adcom-assets` repository (for example: `http://localhost:3002/assets` in dev or `https://idlegametools.com/assets` in prod).
+`ASSET_SERVER` is used by backend proxy routes (`/api/data/:title`, `/api/admin/data-file`) and must be reachable from the app container/process.
+`ASSET_PUBLIC_BASE` is used by the browser to resolve image assets from the `adcom-assets` repository.
+
+Recommended values:
+- Dev (Docker Compose): `ASSET_SERVER=http://assets:3002`, `ASSET_PUBLIC_BASE=http://localhost:3002/assets`
+- Prod: `ASSET_SERVER=http://assets:3002` (or equivalent private/internal URL), `ASSET_PUBLIC_BASE=https://idlegametools.com/assets`
+
+The app and asset containers join the shared external Docker network `adcom-sites`. In production, reverse proxy this app to `/adcom-mission-tracker/` and proxy only the asset server's `/assets/` path publicly. Do not expose the asset server's `/` or `/update` paths publicly.
 
 The Git Commit ID is passed in by the build script and exposed as an environment variable by Docker itself.
 
