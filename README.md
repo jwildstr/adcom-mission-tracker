@@ -14,23 +14,21 @@ The website is mainly a static page built upon a single monolith JS file (`missi
 ## Build Instructions
 The website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server.
 
-Assets/images are not provided in the repository as these are copyrighted material.
+Assets/images are not provided in the repository as these are copyrighted material. This repository must be run in tandem with [https://github.com/darrenrs/adcom-assets](adcom-assets).
 
 ### .env File
 The `.env` file should be structured as follows:
 
-```
-# App settings
-PORT=
-ASSET_SERVER=
-ASSET_PUBLIC_BASE=
+| Variable | Required | Description |
+|---|---|---|
+| `PORT` | Yes | Express server port. |
+| `ASSET_SERVER` | Yes | Backend-to-backend asset server base URL. |
+| `ASSET_PUBLIC_BASE` | Yes | Browser-facing asset root URL for images/JSON (for example, `http://localhost:3002/assets`). |
+| `PLAYFAB_TITLE_ID_ADCOM` | Yes | AdVenture Communist PlayFab Title ID (`6bf5`) |
+| `PLAYFAB_TITLE_ID_AGES` | Yes | AdVenture Ages PlayFab Title ID (`dc4bb`) |
 
-# Title IDs
-PLAYFAB_TITLE_ID_ADCOM=
-PLAYFAB_TITLE_ID_AGES=
-```
 `ASSET_SERVER` is used by backend proxy routes (`/api/data/:title`, `/api/admin/data-file`).
-`ASSET_PUBLIC_BASE` is used by the browser to resolve image assets (for example: `http://localhost:3002/assets/6bf5` in dev or `https://idlegametools.com/adcom-assets/assets/6bf5` in prod).
+`ASSET_PUBLIC_BASE` is used by the browser to resolve image assets from the `adcom-assets` repository (for example: `http://localhost:3002/assets` in dev or `https://idlegametools.com/assets` in prod).
 
 The Git Commit ID is passed in by the build script and exposed as an environment variable by Docker itself.
 
@@ -60,8 +58,8 @@ I welcome any feedback, bug reports, or pull requests.
 If you have any questions, comments, or suggestions, please visit the #engineering channel in the [unofficial AdCom Discord](https://discord.gg/VPa4WTM). We are always happy to help.
 
 ## License
-All files in this repository may be modified or redistributed with credit given to the current owner (Enigma) or original owner (Zephyron), given that it ascribes to the Hyper Hippo Fan Content Policy and all legal stipulations.
+All files in this repository may be modified or redistributed with credit given to the current owner (Darren R. Skidmore / Enigma) or original owner (Zephyron), given that it ascribes to the Hyper Hippo Fan Content Policy and all legal stipulations.
 
 This material is not official and is not endorsed by Hyper Hippo. For more information, see Hyper Hippo’s Fan Content Policy: (https://hyperhippo.com/fan-content-policy/)
 
-Last updated: 1 December 2025.
+Last updated: 8 May 2026.

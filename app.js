@@ -46,15 +46,7 @@ const normalizeAssetPublicRoot = () => {
     return null;
   }
 
-  // Support both ".../assets" and ".../assets/6bf5" style values.
-  const normalized = stripTrailingSlashes(ASSET_PUBLIC_BASE);
-  const titleIds = [PLAYFAB_TITLE_ID_ADCOM, PLAYFAB_TITLE_ID_AGES].filter(Boolean);
-  if (titleIds.length < 1) {
-    return normalized;
-  }
-
-  const titleSuffixPattern = new RegExp(`/(?:${titleIds.join('|')})$`);
-  return normalized.replace(titleSuffixPattern, '');
+  return stripTrailingSlashes(ASSET_PUBLIC_BASE);
 };
 
 const assetServerBaseForTitle = (titleId) => {
