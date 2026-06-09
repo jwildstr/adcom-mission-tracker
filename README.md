@@ -9,54 +9,32 @@ Each mission has a button of its reward capsule next to it.  Clicking this bring
 Switch between Motherland (main) and Event as well as between AdVenture Communist and AdVenture Ages by clicking on the title's dropdown. Other tools can be accessed by clicking around other icons in the top right.
 
 ## Technical Background
-The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). Let's just say I am interested in refactoring it! The server is a simple Node.js/Express instance running on a Docker container. Game data files are stored server-side and can be updated by server administrators.
+The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). The server is a simple Node.js/Express instance running on a Docker container. Game data and most game images are served by a dedicated asset server and referenced by title ID.
+
+Assets/images are not provided in the repository as these are copyrighted material. This repository must be run in tandem with [https://github.com/darrenrs/adcom-assets](adcom-assets).
 
 ## Build Instructions
-
-You'll need a few things set up first, so you can create the environment file.
-
-### PlayFab ID
-
-If you don't have any idea what a PlayFab ID is, you'll want to follow these instructions. If you already know, you can bypass this and do it in a "proper" way.
-
-In order to do anything, you'll need a playfab ID. This is a 16-digit hex string (0-9 and A-F). You can find yours in the settings menu of the game, although it didn't work for me. You can create the necessary account for both games as follows (replace DEVID with your PlayFab ID, and this assumes you're setting it up for iOS):
-
-```
-curl -H "Content-Type: application/json" -d '{"DeviceId": "DEVID", "CreateAccount":true, "TitleId": "dc4bb"}' https://dc4bb.playfabapi.com/Client/LoginWithIOSDeviceID
-curl -H "Content-Type: application/json" -d '{"DeviceId": "DEVID", "CreateAccount":true, "TitleId": "6bf5"}' https://6bf5.playfabapi.com/Client/LoginWithIOSDeviceID
-```
-
-This ID should be in the .env file under `PLAYFAB_DEVICE_ID`. If you follow these instructions, `PLAYFAB_DEVICE_ID_TYPE` will need to be IOS.
-
-### The password
-
-The password is stored encrypted in the .env file. To encrypt your password, use sha256sum as follows (This is for a password of `password`)
-
-```
-echo -n password | sha256sum
-```
-
-This will give an output of
-```
-5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8  -
-```
-
-The first long string there is your encrypted password. This is used below, but replace with your own.
 
 ### .env File
 The `.env` file should be structured as follows (again, replace DEVID with your PlayFab ID). If you don't specify a port, it defaults to 3000:
 
-```
-# App settings
-PORT=
-ADMIN_PASSWORD=5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+| Variable | Required | Description |
+|---|---|---|
+| `PORT` | Yes | Express server port. |
+| `ASSET_SERVER` | Yes | Backend-to-backend asset server base URL (Docker service URL in dev, private internal URL in prod). |
+| `ASSET_PUBLIC_BASE` | Yes | Browser-facing asset root URL for images/JSON (for example, `http://localhost:3002/assets`). |
+| `PLAYFAB_TITLE_ID_ADCOM` | Yes | AdVenture Communist PlayFab Title ID (`6bf5`) |
+| `PLAYFAB_TITLE_ID_AGES` | Yes | AdVenture Ages PlayFab Title ID (`dc4bb`) |
 
-# PlayFab settings
-PLAYFAB_TITLE_ID_ADCOM=dc4bb
-PLAYFAB_TITLE_ID_AGES=6bf5
-PLAYFAB_DEVICE_ID=DEVID
-PLAYFAB_DEVICE_ID_TYPE=IOS
-```
+`ASSET_SERVER` is used by backend proxy routes (`/api/data/:title`, `/api/admin/data-file`) and must be reachable from the app container/process.
+`ASSET_PUBLIC_BASE` is used by the browser to resolve image assets from the `adcom-assets` repository.
+
+Recommended values:
+- Dev (Docker Compose): `ASSET_SERVER=http://assets:3002`, `ASSET_PUBLIC_BASE=http://localhost:3002/assets`
+- Prod: `ASSET_SERVER=http://assets:3002` (or equivalent private/internal URL), `ASSET_PUBLIC_BASE=https://idlegametools.com/assets`
+
+The app and asset containers join the shared external Docker network `adcom-sites`. In production, reverse proxy this app to `/adcom-mission-tracker/` and proxy only the asset server's `/assets/` path publicly. Do not expose the asset server's `/` or `/update` paths publicly.
+
 The Git Commit ID is passed in by the build script and exposed as an environment variable by Docker itself.
 
 ### Building and launching
@@ -99,8 +77,8 @@ I welcome any feedback, bug reports, or pull requests.
 If you have any questions, comments, or suggestions, please visit the #engineering channel in the [unofficial AdCom Discord](https://discord.gg/VPa4WTM). We are always happy to help.
 
 ## License
-All files in this repository with the exception of those in `/public/img`, `/docs/icon.png`, and game data files downloaded into `/data` may be modified or redistributed with credit given to the current owner (Enigma) or original owner (Zephyron), given that it ascribes to the Hyper Hippo Fan Content Policy and all legal stipulations.
+All files in this repository may be modified or redistributed with credit given to the current owner (Darren R. Skidmore / Enigma) or original owner (Zephyron), given that it ascribes to the Hyper Hippo Fan Content Policy and all legal stipulations.
 
 This material is not official and is not endorsed by Hyper Hippo. For more information, see Hyper Hippo’s Fan Content Policy: (https://hyperhippo.com/fan-content-policy/)
 
-Last updated: 1 December 2025.
+Last updated: 8 May 2026.

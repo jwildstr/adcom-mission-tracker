@@ -1,95 +1,112 @@
-const postFormAdmin = async() => {
-  document.querySelector('#mainContent').classList.add('d-none')
-  document.querySelector('#adminLoginStatus').classList.remove('d-none')
-  document.querySelector('#adminLoginStatus').innerText = 'Loading ...'
+const setStatusMessage = (message, isSuccess = false) => {
+  const statusNode = document.querySelector('#updateDataFileStatus');
+  statusNode.classList.remove('d-none');
+  statusNode.classList.toggle('text-success', isSuccess);
+  statusNode.classList.toggle('text-danger', !isSuccess);
+  statusNode.innerText = message;
+};
 
-  const data = {
-    "password": document.querySelector('#adminControlPass').value
-  }
+const getTitleIds = () => {
+  const runtime = window.__RUNTIME_CONFIG__ || {};
+  const titleIds = runtime.titleIds || {};
+  return {
+    adcom: titleIds.adcom || '6bf5',
+    ages: titleIds.ages || 'dc4bb'
+  };
+};
 
-  await fetch('api/admin', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(data)
-  })
-  .then((response) => {
-    if (response.ok) {
-      return response.json()
-    } else if (response.status === 401) {
-      document.querySelector('#adminLoginStatus').innerText = 'Incorrect password'
-    } else {
-      console.error(`Server error while logging in: (${response.status})`)
-      document.querySelector('#adminLoginStatus').innerText = `Server error (${response.status})`
-    }
-  })
-  .then((responseJson) => {
-    if (!responseJson) {
-      return
-    }
+const renderStatus = (statusByTitle) => {
+  const titleIds = getTitleIds();
+  const adcomStatus = statusByTitle[titleIds.adcom] || {};
+  const agesStatus = statusByTitle[titleIds.ages] || {};
 
-    document.querySelector('#existingVersion_ADCOM').innerText = responseJson.PLAYFAB_TITLE_ID_ADCOM || "unknown";
-    document.querySelector('#existingVersion_AGES').innerText = responseJson.PLAYFAB_TITLE_ID_AGES || "unknown";
-    document.querySelector('#secondaryAdminAuthentication').value = document.querySelector('#adminControlPass').value
-    document.querySelector('#mainContent').classList.remove('d-none')
-    document.querySelector('#adminLoginStatus').classList.add('d-none')
-  })
-  .catch((error) => {
-    console.error(error)
-    document.querySelector('#adminLoginStatus').innerText = 'Please check your internet connection'
-  })
-}
+  document.querySelector('#existingVersion_6bf5').innerText = adcomStatus.dataVersion || 'Unknown';
+  document.querySelector('#existingJob_6bf5').innerText = adcomStatus.jobCompleteAt || 'Unknown';
+  document.querySelector('#existingVersion_dc4bb').innerText = agesStatus.dataVersion || 'Unknown';
+  document.querySelector('#existingJob_dc4bb').innerText = agesStatus.jobCompleteAt || 'Unknown';
+};
 
-const postFormUpdateDataFile = async() => {
-  document.querySelector('#updateDataFileStatus').classList.remove('d-none')
-  document.querySelector('#updateDataFileStatus').classList.remove('text-success')
-  document.querySelector('#updateDataFileStatus').classList.add('text-danger')
-  document.querySelector('#updateDataFileStatus').innerText = 'Please wait ...'
+const loadStatus = async () => {
+  return await fetch('api/admin/status')
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Status request failed (${response.status})`);
+      }
 
-  const data = {
-    "password": document.querySelector('#secondaryAdminAuthentication').value,
-    "title": document.querySelector('input[name="title"]:checked').value,
-    "version": document.querySelector('#dataVersion').value
-  }
+      return response.json();
+    })
+    .then((statusByTitle) => {
+      renderStatus(statusByTitle);
+      return true;
+    })
+    .catch((error) => {
+      console.error(error);
+      setStatusMessage('Unable to load current asset server versions.');
+      return false;
+    });
+};
+
+const postFormUpdateDataFile = async () => {
+  setStatusMessage('Please wait ...');
+
+  const payload = {
+    title: document.querySelector('input[name="title"]:checked').value,
+    version: document.querySelector('#dataVersion').value.trim(),
+    password: document.querySelector('#assetServerPassword').value,
+    allowDowngrade: document.querySelector('#allowDowngrade').checked
+  };
 
   return await fetch('api/admin/data-file', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(payload)
   })
-  .then((response) => {
-    if (response.ok) {
-      document.querySelector('#updateDataFileStatus').classList.add('text-success')
-      document.querySelector('#updateDataFileStatus').classList.remove('text-danger')
-      document.querySelector('#updateDataFileStatus').innerText = `Successfully updated data files to version ${document.querySelector('#dataVersion').value}`
-    } else if (response.status === 401) {
-      document.querySelector('#updateDataFileStatus').innerText = 'Incorrect password'
-    } else {
-      console.error(`Server error (${response.status})`)
-      return response.json()
-    }
-  })
-  .then((responseJson) => {
-    if (!responseJson) {
-      return
-    }
+    .then(async (response) => {
+      const contentType = response.headers.get('content-type') || '';
+      let body;
+      if (contentType.includes('application/json')) {
+        body = await response.json();
+      } else {
+        body = { message: await response.text() };
+      }
 
-    document.querySelector('#updateDataFileStatus').innerText = responseJson.message
-  })
-  .catch((error) => {
-    console.error(error)
-    document.querySelector('#updateDataFileStatus').innerText = 'Please check your internet connection'
-    return
-  })
-}
+      if (response.ok) {
+        setStatusMessage(`Successfully updated data files to version ${payload.version}`, true);
+        await loadStatus();
+        return;
+      }
 
-document.querySelector('#formSubmitAdmin').addEventListener('click', function() {
-  postFormAdmin()
-})
+      if (response.status === 401) {
+        setStatusMessage('Incorrect password');
+        return;
+      }
 
-document.querySelector('#formSubmitUpdateDataFile').addEventListener('click', function() {
-  postFormUpdateDataFile()
-})
+      const message = body?.status || body?.message || body?.detail || `Server error (${response.status})`;
+      setStatusMessage(typeof message === 'string' ? message : JSON.stringify(message));
+    })
+    .catch((error) => {
+      console.error(error);
+      setStatusMessage('Please check your internet connection');
+    });
+};
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const titleIds = getTitleIds();
+  const adcomRadio = document.querySelector('#title_6bf5');
+  const agesRadio = document.querySelector('#title_dc4bb');
+  const adcomLabel = document.querySelector('label[for="title_6bf5"]');
+  const agesLabel = document.querySelector('label[for="title_dc4bb"]');
+
+  adcomRadio.value = titleIds.adcom;
+  agesRadio.value = titleIds.ages;
+  adcomLabel.innerText = `AdCom (${titleIds.adcom})`;
+  agesLabel.innerText = `Ages (${titleIds.ages})`;
+
+  await loadStatus();
+});
+
+document.querySelector('#formSubmitUpdateDataFile').addEventListener('click', () => {
+  postFormUpdateDataFile();
+});

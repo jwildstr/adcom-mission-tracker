@@ -1,12 +1,8 @@
 import express from 'express';
 import 'dotenv/config';
-import axios from 'axios';
-import * as fs from 'node:fs';
-import * as crypto from 'node:crypto';
-import * as zlib from 'node:zlib';
-import { promisify } from 'node:util';
+import fs from 'node:fs';
+import path from 'node:path';
 
-const gunzip = promisify(zlib.gunzip);
 const app = express();
 
 app.use(express.urlencoded({
@@ -17,102 +13,185 @@ app.use(express.json());
 app.use(
   express.static('public', {
     extensions: ['html']
-  }
-));
+  })
+);
 app.enable('trust proxy');
 
-// Get core data from .env
+// Core environment settings
 const PORT = process.env.PORT || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const PLAYFAB_TITLE_ID_ADCOM = process.env.PLAYFAB_TITLE_ID_ADCOM;
 const PLAYFAB_TITLE_ID_AGES = process.env.PLAYFAB_TITLE_ID_AGES;
-const PLAYFAB_DEVICE_ID = process.env.PLAYFAB_DEVICE_ID;
-const PLAYFAB_DEVICE_ID_TYPE = process.env.PLAYFAB_DEVICE_ID_TYPE;
-const LANGUAGE = process.env.LANGUAGE || 'English';
+const ASSET_SERVER = process.env.ASSET_SERVER;
+const ASSET_PUBLIC_BASE = process.env.ASSET_PUBLIC_BASE;
 
-const getDataFilesForTitleVersion = async (title, version) => {
-  if (PLAYFAB_DEVICE_ID_TYPE !== 'IOS' && PLAYFAB_DEVICE_ID_TYPE !== 'ANDROID') {
-    throw new Error(
-      `Invalid PlayFab device ID type: "${PLAYFAB_DEVICE_ID_TYPE}". Expected "IOS" or "ANDROID".`
-    );
-  };
+const BALANCE_CONFIG_BY_TITLE_ENV = {
+  adcom: 'public/config_adcom.js',
+  ages: 'public/config_ages.js'
+};
 
-  const playfabLoginEndpoint = PLAYFAB_DEVICE_ID_TYPE === 'IOS' ? 'LoginWithIOSDeviceID' : 'LoginWithAndroidDeviceID';
-  
-  // Get title data from env
-  if (title !== PLAYFAB_TITLE_ID_ADCOM && title !== PLAYFAB_TITLE_ID_AGES) {
-    throw new Error(
-      `Invalid title ID: "${title}". Expected "6bf5" or "dc4bb".`
-    );
-  };
+const getAllowedTitleIds = () => {
+  return [PLAYFAB_TITLE_ID_ADCOM, PLAYFAB_TITLE_ID_AGES].filter(Boolean);
+};
 
-  // Create login payload
-  const loginPayload =
-  PLAYFAB_DEVICE_ID_TYPE === 'IOS'
-    ? {
-        DeviceId: PLAYFAB_DEVICE_ID,
-        TitleId: title
-      }
-    : {
-        AndroidDeviceId: PLAYFAB_DEVICE_ID,
-        TitleId: title
-      };
-  
-  // Send session request
-  const sessionRequest = await axios.post(
-    `https://${title}.playfabapi.com/Client/${playfabLoginEndpoint}`,
-    loginPayload
-  );
+const isTitleAllowed = (titleId) => {
+  return getAllowedTitleIds().includes(titleId);
+};
 
-  const sessionToken = sessionRequest.data.data.SessionTicket;
+const stripTrailingSlashes = (input) => {
+  return input.replace(/\/+$/, '');
+};
 
-  // Send data file manifest request
-  const dataFileManifestRequest = await axios.post(
-    `https://${title}.playfabapi.com/Client/ExecuteCloudScript`,
-    {
-      FunctionName: 'DataConfig',
-      FunctionParameter: {
-        DataVersion: version
-      },
-    },
-    {
-      headers: {
-        'X-Authorization': sessionToken,
-      },
+const normalizeAssetPublicRoot = () => {
+  if (!ASSET_PUBLIC_BASE) {
+    return null;
+  }
+
+  return stripTrailingSlashes(ASSET_PUBLIC_BASE);
+};
+
+const assetServerBaseForTitle = (titleId) => {
+  if (!ASSET_SERVER || !titleId) {
+    return null;
+  }
+
+  return `${stripTrailingSlashes(ASSET_SERVER)}/assets/${titleId}`;
+};
+
+const assetPublicBaseForTitle = (titleId) => {
+  if (!titleId) {
+    return '';
+  }
+
+  const normalizedPublicRoot = normalizeAssetPublicRoot();
+  if (normalizedPublicRoot) {
+    return `${normalizedPublicRoot}/${titleId}`;
+  }
+
+  const fallback = assetServerBaseForTitle(titleId);
+  return fallback || '';
+};
+
+const assetUpdateUrl = () => {
+  if (!ASSET_SERVER) {
+    return null;
+  }
+
+  return `${stripTrailingSlashes(ASSET_SERVER)}/update`;
+};
+
+const extractBalanceIdsFromConfig = (relativeConfigPath) => {
+  try {
+    const absolutePath = path.resolve(process.cwd(), relativeConfigPath);
+    const source = fs.readFileSync(absolutePath, 'utf8');
+    const objectMatch = source.match(/BALANCE_UPDATE_VERSION\s*=\s*\{([\s\S]*?)\};/);
+    if (!objectMatch || !objectMatch[1]) {
+      return [];
     }
-  );
 
-  return JSON.parse(dataFileManifestRequest.data.data.FunctionResult);
+    const ids = [];
+    const keyMatcher = /["']([^"']+)["']\s*:/g;
+    let keyMatch = keyMatcher.exec(objectMatch[1]);
+    while (keyMatch) {
+      ids.push(keyMatch[1]);
+      keyMatch = keyMatcher.exec(objectMatch[1]);
+    }
+
+    return ids.filter((id) => id && id !== 'main');
+  } catch (error) {
+    console.error(`Failed to parse known balance IDs from "${relativeConfigPath}". ${error}`);
+    return [];
+  }
 };
 
-const downloadUrlList = async (urls, title) => {
-  await Promise.all(
-    urls.map(async (url) => {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Unable to download "${url}": ${response.status} ${response.statusText}`);
+const getKnownBalanceIdsByTitle = () => {
+  const byTitle = {};
+  if (PLAYFAB_TITLE_ID_ADCOM) {
+    byTitle[PLAYFAB_TITLE_ID_ADCOM] = extractBalanceIdsFromConfig(BALANCE_CONFIG_BY_TITLE_ENV.adcom);
+  }
+  if (PLAYFAB_TITLE_ID_AGES) {
+    byTitle[PLAYFAB_TITLE_ID_AGES] = extractBalanceIdsFromConfig(BALANCE_CONFIG_BY_TITLE_ENV.ages);
+  }
+  return byTitle;
+};
+
+const KNOWN_BALANCE_IDS_BY_TITLE = getKnownBalanceIdsByTitle();
+
+const fetchJson = async (url) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`GET ${url} failed with HTTP ${response.status}`);
+  }
+
+  return response.json();
+};
+
+const fetchText = async (url) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`GET ${url} failed with HTTP ${response.status}`);
+  }
+
+  return response.text();
+};
+
+const getAssetServerStatusByTitle = async () => {
+  const emptyStatus = {};
+  for (const titleId of getAllowedTitleIds()) {
+    emptyStatus[titleId] = {
+      dataVersion: 'Unknown',
+      jobCompleteAt: 'Unknown'
+    };
+  }
+
+  if (!ASSET_SERVER) {
+    return emptyStatus;
+  }
+
+  try {
+    const statusUrl = stripTrailingSlashes(ASSET_SERVER);
+    const response = await fetch(statusUrl);
+    if (!response.ok) {
+      return emptyStatus;
+    }
+
+    const statusJson = await response.json();
+    if (!statusJson || !statusJson.titles) {
+      return emptyStatus;
+    }
+
+    for (const titleId of Object.keys(emptyStatus)) {
+      const titleStatus = statusJson.titles[titleId];
+      if (titleStatus) {
+        emptyStatus[titleId] = {
+          dataVersion: titleStatus.dataVersion || 'Unknown',
+          jobCompleteAt: titleStatus.jobCompleteAt || 'Unknown'
+        };
       }
+    }
+  } catch (error) {
+    console.error(`Failed to load asset status. ${error}`);
+  }
 
-      // decompress gzip data
-      const gzipBuffer = Buffer.from(await response.arrayBuffer());
-      const data = await gunzip(gzipBuffer);
-
-      // remove ".gz" extension
-      let filename = url.split('/').pop().split('?')[0];
-      if (filename.endsWith('.gz')) {
-        filename = filename.slice(0, -3);
-      }
-
-      await fs.promises.writeFile(`data/${title}/${filename}`, data);
-    })
-  );
+  return emptyStatus;
 };
 
-const compareSha256Hash = (inputRaw, hash) => {
-  const inputHash = crypto.createHash('sha256').update(inputRaw).digest('hex');
+app.get('/js/runtime-config.js', async (req, res) => {
+  res.setHeader('content-type', 'application/javascript; charset=utf-8');
+  res.setHeader('cache-control', 'no-store, max-age=0');
 
-  return inputHash === hash;
-};
+  const runtimeConfig = {
+    titleIds: {
+      adcom: PLAYFAB_TITLE_ID_ADCOM || '',
+      ages: PLAYFAB_TITLE_ID_AGES || ''
+    },
+    assetBaseByTitleId: {
+      ...(PLAYFAB_TITLE_ID_ADCOM ? { [PLAYFAB_TITLE_ID_ADCOM]: assetPublicBaseForTitle(PLAYFAB_TITLE_ID_ADCOM) } : {}),
+      ...(PLAYFAB_TITLE_ID_AGES ? { [PLAYFAB_TITLE_ID_AGES]: assetPublicBaseForTitle(PLAYFAB_TITLE_ID_AGES) } : {})
+    }
+  };
+
+  res.status(200).send(`window.__RUNTIME_CONFIG__ = ${JSON.stringify(runtimeConfig)};`);
+});
 
 app.post('/api/import', async (req, res) => {
   const { payload } = req.body || {};
@@ -121,8 +200,7 @@ app.post('/api/import', async (req, res) => {
     return res.status(400).send('Missing payload');
   }
 
-  // Safely embed the base64 string in JS
-  const safePayload = JSON.stringify(payload); // makes a valid JS string literal
+  const safePayload = JSON.stringify(payload);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html>
@@ -138,7 +216,6 @@ app.post('/api/import', async (req, res) => {
     (function () {
       const encoded = ${safePayload};
 
-      // Base64 → UTF-8 string (mirror of the encoder we used)
       function fromBase64(b64) {
         const binary = atob(b64);
         const utf8 = Array.prototype.map.call(binary, function (ch) {
@@ -158,10 +235,8 @@ app.post('/api/import', async (req, res) => {
         }
       } catch (err) {
         console.error('Import failed:', err);
-        // You *could* show a nicer error page here instead of silently redirecting
       }
 
-      // After localStorage is repopulated, go to home page
       window.location.href = '/adcom-mission-tracker/';
     })();
   </script>
@@ -170,277 +245,142 @@ app.post('/api/import', async (req, res) => {
 });
 
 app.get('/api/data/:title', async (req, res) => {
-  // validate title
-  if (req.params.title !== PLAYFAB_TITLE_ID_ADCOM && req.params.title !== PLAYFAB_TITLE_ID_AGES) {
+  const titleId = req.params.title;
+  if (!isTitleAllowed(titleId)) {
     return res.sendStatus(400);
   }
 
+  const titleAssetServerBase = assetServerBaseForTitle(titleId);
+  if (!titleAssetServerBase) {
+    return res.sendStatus(500);
+  }
+
   try {
-    // read manifest
-    const manifestRaw = await fs.promises.readFile(`./data/${req.params.title}/manifest.json`, 'utf8');
-    const manifestExistingData = JSON.parse(manifestRaw);
+    const scheduleUrl = `${titleAssetServerBase}/schedule.json`;
+    const localizationUrl = `${titleAssetServerBase}/localization.txt`;
 
-    // ---- Balance: key/value by manifest Balance.Urls key ----
-    const balanceResult = {};
-    const balanceUrls = manifestExistingData?.VersionSettings?.Balance?.Urls || {};
+    const schedule = await fetchJson(scheduleUrl);
+    const localizationRaw = await fetchText(localizationUrl);
 
-    for (const [key, value] of Object.entries(balanceUrls)) {
-      // value is the filename with .gz; local file is stored without .gz
-      const filename = value.replace('.gz', '');
-      const filePath = `./data/${req.params.title}/${filename}`;
-      const fileContents = await fs.promises.readFile(filePath, 'utf8');
-      balanceResult[key] = JSON.parse(fileContents);
+    const balanceIds = new Set(['common', 'evergreen']);
+    const knownBalanceIds = KNOWN_BALANCE_IDS_BY_TITLE[titleId] || [];
+    for (const knownBalanceId of knownBalanceIds) {
+      balanceIds.add(knownBalanceId);
     }
 
-    // ---- Localization: select file matching LANGUAGE prefix ----
-    const localizationUrls = manifestExistingData?.VersionSettings?.Localization?.Urls || {};
-    let localizationFilename = null;
-
-    for (const value of Object.values(localizationUrls)) {
-      const withoutGz = value.replace('.gz', '');
-      // file format: LANGUAGE.uselessMd5Hash.json
-      if (withoutGz.startsWith(`${LANGUAGE}.`)) {
-        localizationFilename = withoutGz;
-        break;
+    const mapBalanceIdForAsset = (balanceId) => {
+      if (!balanceId) {
+        return balanceId;
       }
-    }
 
-    if (!localizationFilename) {
-      throw new Error(`No localization file found for language "${LANGUAGE}" in manifest for title "${req.params.title}".`);
-    }
+      if (balanceId === 'common') {
+        return 'common';
+      }
 
-    const localizationPath = `./data/${req.params.title}/${localizationFilename}`;
-    const localizationContents = await fs.promises.readFile(localizationPath, 'utf8');
-    const localizationResult = Buffer.from(localizationContents).toString('base64');
+      if (balanceId === 'main' || balanceId === 'evergreen') {
+        return 'evergreen';
+      }
 
-    // ---- LTESchedule: always CombinedLTESchedule from manifest ----
-    const lteUrl = manifestExistingData?.VersionSettings?.LTESchedule?.Url;
-    if (!lteUrl) {
-      throw new Error(`No LTESchedule URL found in manifest for title "${req.params.title}".`);
-    }
+      return balanceId.split('-')[0];
+    };
 
-    let lteFilename = lteUrl.split('/').pop().split('?')[0];
-    lteFilename = lteFilename.replace('.gz', '');
-    const ltePath = `./data/${req.params.title}/${lteFilename}`;
-    const lteContents = await fs.promises.readFile(ltePath, 'utf8');
-    const lteResult = JSON.parse(lteContents);
+    const balanceFetchCache = {};
+    const fetchBalanceForAssetId = async (assetBalanceId) => {
+      if (balanceFetchCache[assetBalanceId]) {
+        return balanceFetchCache[assetBalanceId];
+      }
 
-    // Final response
+      let balanceUrl;
+      if (assetBalanceId === 'common') {
+        balanceUrl = `${titleAssetServerBase}/common.json`;
+      } else {
+        balanceUrl = `${titleAssetServerBase}/${assetBalanceId}/balance.json`;
+      }
+
+      const parsedBalance = await fetchJson(balanceUrl);
+      balanceFetchCache[assetBalanceId] = parsedBalance;
+      return parsedBalance;
+    };
+
+    const sortedBalanceIds = Array.from(balanceIds).sort((a, b) => a.localeCompare(b));
+    const balanceEntries = await Promise.all(
+      sortedBalanceIds.map(async (balanceId) => {
+        const assetBalanceId = mapBalanceIdForAsset(balanceId);
+        const parsedBalance = await fetchBalanceForAssetId(assetBalanceId);
+        return [balanceId, parsedBalance];
+      })
+    );
+    const balanceResult = Object.fromEntries(balanceEntries);
+
     const responseBody = {
       Balance: balanceResult,
-      Localization: localizationResult,
-      LTESchedule: lteResult
+      Localization: Buffer.from(localizationRaw, 'utf8').toString('base64'),
+      LTESchedule: schedule
     };
 
     return res.json(responseBody);
   } catch (error) {
-    console.error(`Failed to read data files for title "${req.params.title}". ${error}`);
+    console.error(`Failed to load asset data for title "${titleId}". ${error}`);
+    return res.sendStatus(502);
+  }
+});
+
+app.get('/api/admin/status', async (req, res) => {
+  if (!PLAYFAB_TITLE_ID_ADCOM || !PLAYFAB_TITLE_ID_AGES) {
     return res.sendStatus(500);
   }
-})
 
-app.post('/api/admin', async (req, res) => {
-  if (!ADMIN_PASSWORD || !PLAYFAB_TITLE_ID_ADCOM || !PLAYFAB_TITLE_ID_AGES || !PLAYFAB_DEVICE_ID || !PLAYFAB_DEVICE_ID_TYPE) {
-    return res.sendStatus(500);
-  } else if (req.body && compareSha256Hash(req.body.password, ADMIN_PASSWORD)) {
-    const returnStruct = {
-      PLAYFAB_TITLE_ID_ADCOM: null,
-      PLAYFAB_TITLE_ID_AGES: null
-    };
-
-    returnStruct.PLAYFAB_TITLE_ID_ADCOM = await fs.promises.readFile(`./data/${PLAYFAB_TITLE_ID_ADCOM}/version`, 'utf8')
-    .then((data) => {
-      return data
-    })
-    .catch((error) => {
-      console.error(`Unable to determine data version for title "${PLAYFAB_TITLE_ID_ADCOM}". ${error}`)
-    });
-
-    returnStruct.PLAYFAB_TITLE_ID_AGES = await fs.promises.readFile(`./data/${PLAYFAB_TITLE_ID_AGES}/version`, 'utf8')
-    .then((data) => {
-      return data
-    })
-    .catch((error) => {
-      console.error(`Unable to determine data version for title "${PLAYFAB_TITLE_ID_AGES}". ${error}`)
-    });
-
-    res.json(returnStruct);
-  } else {
-    return res.sendStatus(401);
-  }
-  
-  return;
-})
+  const statusByTitle = await getAssetServerStatusByTitle();
+  res.status(200).json(statusByTitle);
+});
 
 app.post('/api/admin/data-file', async (req, res) => {
-  const returnStruct = {
-    "message": null
-  };
-
-  if (!ADMIN_PASSWORD || !PLAYFAB_TITLE_ID_ADCOM || !PLAYFAB_TITLE_ID_AGES || !PLAYFAB_DEVICE_ID || !PLAYFAB_DEVICE_ID_TYPE) {
-    returnStruct.message = 'Server error';
-    res.status(500).json(returnStruct);
-  } else if (!req.body || !req.body.title || !req.body.version || (req.body.title !== PLAYFAB_TITLE_ID_ADCOM && req.body.title !== PLAYFAB_TITLE_ID_AGES)) {
-    returnStruct.message = 'Invalid parameters';
-    res.status(400).json(returnStruct);
-  } else if (req.body && compareSha256Hash(req.body.password, ADMIN_PASSWORD)) {
-    // Create directory if doesn't exist
-    await fs.promises.mkdir(`./data/${req.body.title}`,
-      {
-        recursive: true
-      }
-    )
-    .catch((error) => {
-      console.error(`Failed to create path. ${error}`);
-    });
-    
-    // parse existing data version
-    const dataVersionExisting = await fs.promises.readFile(`./data/${req.body.title}/version`, 'utf8')
-    .then((data) => {
-      return data;
-    })
-    .catch((error) => {
-      console.error(`Unable to determine data version for title "${PLAYFAB_TITLE_ID_ADCOM}". ${error}`);
-    });
-
-    const dataVersionRequested = req.body.version;
-    const dataVersionRequestedArr = dataVersionRequested.split('.');
-
-    // make sure version strings are ints
-    for (let i of dataVersionRequestedArr) {
-      if (isNaN(parseInt(i))) {
-        returnStruct.message = 'Invalid version requested. Version should be in the format "1.23".'
-        res.status(400).json(returnStruct);
-        return
-      }
-    }
-
-    if (dataVersionExisting) {
-      let continueCheckingDataVersionExisting = true;
-      const dataVersionExistingArr = dataVersionExisting.split('.');
-
-      for (let i of dataVersionExistingArr) {
-        if (isNaN(parseInt(i))) {
-          // there is a problem with the stored version #
-          console.error(`There is a problem with the version identifier for title ID "${req.body.title}".`);
-          continueCheckingDataVersionExisting = false;
-          break;
-        }
-      }
-
-      // make sure we're not going back to a previous version
-      if (continueCheckingDataVersionExisting &&
-        ((parseInt(dataVersionExistingArr[0]) > parseInt(dataVersionRequestedArr[0])) ||
-        ((parseInt(dataVersionExistingArr[0]) === parseInt(dataVersionRequestedArr[0])) && (parseInt(dataVersionExistingArr[1]) > parseInt(dataVersionRequestedArr[1]))))
-      ) {
-        returnStruct.message = 'You cannot request an older version. If you need to revert, please contact the server administrator.'
-        res.status(400).json(returnStruct);
-        return;
-      }
-    }
-    
-    // request new data files
-    const dataFilesForRequestedVersion = await getDataFilesForTitleVersion(req.body.title, dataVersionRequested)
-    .then((data) => {
-      return data;
-    })
-    .catch((error) => {
-      console.error(`Failed to load data files for ${req.body.title}/${req.body.version}: ${error}`);
-      returnStruct.message = 'There was a problem loading the data files. This version may not exist yet.';
-      res.status(404).json(returnStruct);
-    });
-
-    if (!dataFilesForRequestedVersion) {
-      return;
-    };
-
-    // get existing manifest and delete existing files
-    const manifestExisting = await fs.promises.readFile(`./data/${req.body.title}/manifest.json`, 'utf8')
-    .then(async (data) => {
-      const manifestExistingData = JSON.parse(data);
-      
-      const dataFilesExisting = [];
-
-      for (let i of Object.values(manifestExistingData.VersionSettings.Balance.Urls)) {
-        dataFilesExisting.push(i)
-      };
-
-      for (let i of Object.values(manifestExistingData.VersionSettings.Localization.Urls)) {
-        dataFilesExisting.push(i)
-      };
-
-      dataFilesExisting.push(manifestExistingData.VersionSettings.LTESchedule.Url.split('/').pop().split('?')[0]);
-    
-      for (let i of dataFilesExisting) {
-        await fs.promises.unlink(`./data/${req.body.title}/${i.replace('.gz', '')}`)
-        .catch((error) => {
-          console.log(`Failed to delete data file indicated in existing manifest "${i.replace('.gz', '')}". Does it exist? ${error}`);
-        });
-      };
-    })
-    .catch((error) => {
-      console.error(`Failed to read existing manifest for title "${req.body.title}". ${error}`)
-    });
-
-    // write new data file manifest
-    const writeRequestedDataFileManifest = await fs.promises.writeFile(`./data/${req.body.title}/manifest.json`, JSON.stringify(dataFilesForRequestedVersion))
-    .catch((error) => {
-      console.error(`Failed to write data file manifest for ${req.body.title}/${req.body.version}: ${error}`);
-      returnStruct.message = 'There was a problem loading the data files.';
-      res.status(500).json(returnStruct);
-      return null;
-    });
-
-    if (writeRequestedDataFileManifest === null) {
-      return;
-    }
-
-    const urlsForRequestedVersion = [];
-
-    for (let i of Object.values(dataFilesForRequestedVersion.VersionSettings.Balance.Urls)) {
-      urlsForRequestedVersion.push(`${dataFilesForRequestedVersion.VersionSettings.Balance.BaseURL}${i}`);
-    };
-
-    for (let i of Object.values(dataFilesForRequestedVersion.VersionSettings.Localization.Urls)) {
-      urlsForRequestedVersion.push(`${dataFilesForRequestedVersion.VersionSettings.Localization.BaseURL}${i}`);
-    };
-
-    urlsForRequestedVersion.push(dataFilesForRequestedVersion.VersionSettings.LTESchedule.Url);
-    
-    const downloadRequestedFilesStatus = await downloadUrlList(urlsForRequestedVersion, req.body.title)
-    .catch((error) => {
-      console.error(`Failed to download new data files for ${req.body.title}/${req.body.version}. ${error}`)
-      returnStruct.message = 'There was a problem updating the data files.';
-      res.status(500).json(returnStruct);
-      return null;
-    });
-
-    if (downloadRequestedFilesStatus === null) {
-      return;
-    }
-      
-    const writeRequestedManifestStatus = await fs.promises.writeFile(`./data/${req.body.title}/version`, dataVersionRequested)
-    .catch((error) => {
-      console.error(`Failed to write version identifier for ${req.body.title}/${req.body.version}. ${error}`)
-      returnStruct.message = 'There was a problem updating the data files.';
-      res.status(500).json(returnStruct);
-      return null
-    });
-
-    if (writeRequestedManifestStatus === null) {
-      return;
-    }
-
-    return res.sendStatus(200);
-  } else {
-    return res.sendStatus(401);
+  if (!PLAYFAB_TITLE_ID_ADCOM || !PLAYFAB_TITLE_ID_AGES) {
+    return res.sendStatus(500);
   }
 
-  return;
-})
+  const body = req.body || {};
+  if (!body.title || !isTitleAllowed(body.title) || !body.version || !body.password) {
+    return res.status(400).json({ message: 'Invalid parameters' });
+  }
 
-app.get('/api/build', async(req, res) => {
-  const buildId = process.env.COMMIT_HASH || "BUILD UNKNOWN";
+  const updateUrl = assetUpdateUrl();
+  if (!updateUrl) {
+    return res.status(500).json({ message: 'Asset update URL is not configured.' });
+  }
+
+  try {
+    const proxyResponse = await fetch(updateUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        titleId: body.title,
+        dataVersion: body.version,
+        password: body.password,
+        allowDowngrade: Boolean(body.allowDowngrade)
+      })
+    });
+
+    const responseText = await proxyResponse.text();
+    if (!responseText) {
+      return res.sendStatus(proxyResponse.status);
+    }
+
+    try {
+      return res.status(proxyResponse.status).json(JSON.parse(responseText));
+    } catch (error) {
+      return res.status(proxyResponse.status).send(responseText);
+    }
+  } catch (error) {
+    console.error(`Failed to proxy update request to asset server. ${error}`);
+    return res.status(502).json({ message: 'Internal server error. Please see logs for details.' });
+  }
+});
+
+app.get('/api/build', async (req, res) => {
+  const buildId = process.env.COMMIT_HASH || 'BUILD UNKNOWN';
   res.status(200).send(buildId);
 });
 

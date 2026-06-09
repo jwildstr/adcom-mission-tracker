@@ -1,68 +1,73 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-  <title>AdVenture Communist Mission Tracker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link id="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet"
-    crossorigin="anonymous">
-  <link href="missions_base.css" rel="stylesheet">
-  <link href="missions_img.css" rel="stylesheet">
-  <link rel="shortcut icon" type="image/png" href="img/adcom/shared/gacha/stone.png">
-  <script src="admin.js" defer></script>
-</head>
-
-<body>
-  <nav class="navbar navbar-dark bg-dark sticky-top">
-    <div class="container-fluid">
-      <div id="sideMenuBtn" class="navbar-brand open-btn">
-        <img src="img/adcom/shared/gacha/stone.png" width="30" height="20" class="d-inline-block align-self-center"
-          alt="AdCom icon">
-        Admin Frontend
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AdVenture Mission Tracker Admin</title>
+    <link
+      id="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+    <link href="missions_base.css" rel="stylesheet" />
+    <script src="js/runtime-config.js" defer></script>
+    <script src="admin.js" defer></script>
+  </head>
+  <body id="body" class="dark">
+    <nav class="navbar navbar-dark bg-dark sticky-top">
+      <div class="container-fluid">
+        <div class="navbar-brand">Mission Tracker Admin</div>
       </div>
-    </div>
-  </nav>
-  <div class="container pt-2">
-    <h2>Admin Frontend</h2>
-    <div class="mb-3">
-      <form onsubmit="return false">
-        <div class="mb-3">
-          <label for="adminControlPass">Password</label>
-          <input id="adminControlPass" class="form-control" type="password" aria-describedby="adminControlData"
-            maxlength="1024">
-          <div id="adminControlData" class="form-text">This page is not intended to be accessed by the public</div>
+    </nav>
+    <div class="container pt-3">
+      <h2>Update Data Files</h2>
+      <p class="text-muted">
+        This updates mission-tracker data by forwarding requests to the asset server.
+      </p>
+      <div class="mb-3">
+        <p>
+          <strong>AdVenture Communist (6bf5):</strong>
+          <span id="existingVersion_6bf5">...</span>
+          <br />
+          <small class="text-muted">Last update: <span id="existingJob_6bf5">...</span></small>
+        </p>
+        <p>
+          <strong>AdVenture Ages (dc4bb):</strong>
+          <span id="existingVersion_dc4bb">...</span>
+          <br />
+          <small class="text-muted">Last update: <span id="existingJob_dc4bb">...</span></small>
+        </p>
+      </div>
+      <form onsubmit="return false;">
+        <div class="form-group">
+          <label>Title</label>
+          <div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" id="title_6bf5" name="title" value="6bf5" checked />
+              <label class="form-check-label" for="title_6bf5">AdCom (6bf5)</label>
+            </div>
+            <div class="form-check form-check-inline">
+              <input class="form-check-input" type="radio" id="title_dc4bb" name="title" value="dc4bb" />
+              <label class="form-check-label" for="title_dc4bb">Ages (dc4bb)</label>
+            </div>
+          </div>
         </div>
-        <button id="formSubmitAdmin" type="submit" class="btn btn-primary">Log In</button>
-        <span id="adminLoginStatus" class="d-none p-2 text-danger"></span>
+        <div class="form-group">
+          <label for="dataVersion">Version to update to</label>
+          <input class="form-control" type="text" id="dataVersion" name="version" required />
+        </div>
+        <div class="form-group">
+          <label for="assetServerPassword">Asset Server Password</label>
+          <input id="assetServerPassword" class="form-control" type="password" maxlength="1024" required />
+        </div>
+        <div class="form-check mt-2 mb-3">
+          <input class="form-check-input" type="checkbox" id="allowDowngrade" />
+          <label class="form-check-label" for="allowDowngrade">Allow downgrade to older data version</label>
+        </div>
+        <button id="formSubmitUpdateDataFile" type="submit" class="btn btn-primary">Update</button>
+        <span id="updateDataFileStatus" class="d-none p-2 text-danger"></span>
       </form>
     </div>
-  </div>
-  <div id="mainContent" class="d-none">
-    <hr>
-    <div class="container pt-2">
-      <h3>Update Data Files</h3>
-      <form onsubmit="return false">
-        <div>
-          <div>
-            <input type="radio" id="title_ADCOM" name="title" value="6bf5" checked />
-            <label for="title_ADCOM">AdVenture Communist (current version: <span
-                id="existingVersion_ADCOM"></span>)</label>
-          </div>
-          <div>
-            <input type="radio" id="title_AGES" name="title" value="dc4bb" />
-            <label for="title_AGES">AdVenture Ages (current version: <span id="existingVersion_AGES"></span>)</label>
-          </div>
-          <label for="dataVersion" class="form-label">Version to Update To</label>
-          <input class="form-control" type="text" id="dataVersion" name="version" required>
-          <br>
-          <input id="secondaryAdminAuthentication" class="form-control d-none" type="password" name="password"
-            maxlength="1024">
-          <button id="formSubmitUpdateDataFile" type="submit" class="btn btn-primary">Update</button>
-          <span id="updateDataFileStatus" class="d-none p-2 text-danger"></span>
-        </div>
-      </form>
-    </div>
-  </div>
-</body>
-
+  </body>
 </html>
