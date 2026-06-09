@@ -9,15 +9,14 @@ Each mission has a button of its reward capsule next to it.  Clicking this bring
 Switch between Motherland (main) and Event as well as between AdVenture Communist and AdVenture Ages by clicking on the title's dropdown. Other tools can be accessed by clicking around other icons in the top right.
 
 ## Technical Background
-The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). Let's just say I am interested in refactoring it! The server is a simple Node.js/Express instance running on a Docker container. Game data and most game images are served by a dedicated asset server and referenced by title ID.
-
-## Build Instructions
-The website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server.
+The website is mainly a static page built upon a single monolith JS file (`mission-tracker.js`). The server is a simple Node.js/Express instance running on a Docker container. Game data and most game images are served by a dedicated asset server and referenced by title ID.
 
 Assets/images are not provided in the repository as these are copyrighted material. This repository must be run in tandem with [https://github.com/darrenrs/adcom-assets](adcom-assets).
 
+## Build Instructions
+
 ### .env File
-The `.env` file should be structured as follows:
+The `.env` file should be structured as follows (again, replace DEVID with your PlayFab ID). If you don't specify a port, it defaults to 3000:
 
 | Variable | Required | Description |
 |---|---|---|
@@ -37,6 +36,20 @@ Recommended values:
 The app and asset containers join the shared external Docker network `adcom-sites`. In production, reverse proxy this app to `/adcom-mission-tracker/` and proxy only the asset server's `/assets/` path publicly. Do not expose the asset server's `/` or `/update` paths publicly.
 
 The Git Commit ID is passed in by the build script and exposed as an environment variable by Docker itself.
+
+### Building and launching
+
+The website runs on a Docker container. With Docker Compose installed on a Linux/macOS system, run `build.sh` to start the server. Several directories and files which are not present by default are required. Please contact the developer if you are unsure what should go in here.
+
+Assets/images are not provided in the repository as these are copyrighted material.
+
+Once the website is launched, you can browse to it at http://localhost:3000. To fetch the current data, you'll want to run the following (the versions are the latest as of April 18, 2026, but will likely need updating:
+```
+# AdCom data
+curl -H "Content-Type: application/json" -d '{"title":"6bf5", "version":"6.54", "password":"password"}' http://localhost:8080/api/admin/data-file
+# AdAges data
+curl -H "Content-Type: application/json" -d '{"title":"dc4bb", "version":"1.34", "password":"password"}' http://localhost:8080/api/admin/data-file
+```
 
 ## Contributors
 The primary maintainer of this website is Enigma since 2022 with Catster providing additional support. Zephyron is the original creator of the Mission/Capsule Tracker and FAQ documents.
